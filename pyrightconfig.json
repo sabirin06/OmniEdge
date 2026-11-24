@@ -1,0 +1,14 @@
+{
+  "include": [
+    "backend"
+  ],
+  "extraPaths": [
+    "backend",
+    "backend/apps"
+  ],
+  "venvPath": "C:\\Python313",
+  "pythonVersion": "3.13",
+  "reportMissingImports": "warning",
+  "reportGeneralTypeIssues": "none",
+  "reportOptionalMemberAccess": "none"
+}
