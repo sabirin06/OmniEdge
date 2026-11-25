@@ -75,3 +75,14 @@ h4 { font-size: 14px; font-weight: 600; }
     linear-gradient(90deg, var(--color-border-subtle) 1px, transparent 1px);
   background-size: 40px 40px;
 }
+
+/* Shared form controls */
+input:not([type="checkbox"]):not([type="radio"]), textarea, select {
+  min-height: 40px;
+  border-color: var(--color-input-border);
+  border-radius: 8px;
+}
+input[type="checkbox"], input[type="radio"] { width: auto; accent-color: var(--color-accent); }
+textarea { display: block; min-height: 92px; max-height: 65vh; resize: vertical; }
+form label, fieldset legend { font-size: 13px; letter-spacing: normal; text-transform: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }

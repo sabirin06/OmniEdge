@@ -1,3 +1,4 @@
+import { requestError } from '../../api/errors';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { FormDialog } from '../ui/FormDialog';
@@ -59,7 +60,7 @@ export function RuleForm({ open, rule, onClose, onSaved }: Props) {
       else await rulesApi.create(payload);
       toast('success', rule ? 'Rule updated' : 'Rule created');
       onSaved(); onClose();
-    } catch { toast('error', 'Failed to save rule'); }
+    } catch (error) { toast('error', requestError(error, 'Could not save the rule.')); }
     finally { setLoading(false); }
   };
 

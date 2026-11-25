@@ -1,3 +1,4 @@
+import { requestError } from '../../api/errors';
 import React, { useState, useEffect } from 'react';
 import { Plus, Trash2, GripVertical } from 'lucide-react';
 import { FormDialog } from '../ui/FormDialog';
@@ -52,7 +53,7 @@ export function PlaybookForm({ open, playbook, onClose, onSaved }: Props) {
       else await playbooksApi.create(payload);
       toast('success', playbook ? 'Playbook updated' : 'Playbook created');
       onSaved(); onClose();
-    } catch { toast('error', 'Failed to save playbook'); }
+    } catch (error) { toast('error', requestError(error, 'Could not save the playbook.')); }
     finally { setLoading(false); }
   };
 

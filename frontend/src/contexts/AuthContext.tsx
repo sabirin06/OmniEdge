@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import type { AuthUser } from '../types';
+import type { ProfileSettings } from '../api/auth';
+import { useTheme } from '../hooks/useTheme';
 import { authApi } from '../api/auth';
 
 interface AuthContextValue {
@@ -8,6 +10,7 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
+  updateProfile: (data: ProfileSettings) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -15,6 +18,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  useTheme(user?.theme);
 
   const refresh = useCallback(async () => {
     try {
@@ -30,10 +34,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const login = async (email: string, password: string) => {
-    // Fetch CSRF cookie first
-    try { await authApi.getCsrf(); } catch { /* ignore */ }
-    const { data } = await authApi.login({ email, password });
+    const { data: { csrfToken } } = await authApi.getCsrf();
+    const { data } = await authApi.login({ email: email.trim(), password }, csrfToken);
     setUser(data.user);
+  };
+
+  const updateProfile = async (profile: ProfileSettings) => {
+    const { data } = await authApi.updateProfile(profile);
+    setUser(data);
   };
 
   const logout = async () => {
@@ -43,7 +51,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, refresh, updateProfile }}>
       {children}
     </AuthContext.Provider>
   );

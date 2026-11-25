@@ -13,16 +13,13 @@ from apps.core.middleware import get_current_request
 
 logger = logging.getLogger(__name__)
 
-_incident_pre_save_state: dict = {}
-
-
 @receiver(pre_save, sender=Incident)
 def capture_incident_state(sender, instance: Incident, **kwargs):
     """Capture pre-save state for change detection."""
     if instance.pk:
         try:
             old = Incident.objects.get(pk=instance.pk)
-            _incident_pre_save_state[instance.pk] = {
+            instance._previous_values = {
                 "status": old.status,
                 "severity": old.severity,
                 "owner_id": old.owner_id,
@@ -57,7 +54,7 @@ def incident_post_save(sender, instance: Incident, created: bool, **kwargs):
         )
         return
 
-    old = _incident_pre_save_state.pop(instance.pk, {})
+    old = getattr(instance, "_previous_values", {})
     changes = {}
 
     if old.get("status") and old["status"] != instance.status:
@@ -73,7 +70,7 @@ def incident_post_save(sender, instance: Incident, created: bool, **kwargs):
             metadata={"old_status": old["status"], "new_status": instance.status},
         )
 
-    if old.get("owner_id") and old["owner_id"] != instance.owner_id:
+    if "owner_id" in old and old["owner_id"] != instance.owner_id:
         changes["owner"] = {"from": old["owner_id"], "to": instance.owner_id}
         TimelineEntry.objects.create(
             incident=instance,
@@ -83,6 +80,9 @@ def incident_post_save(sender, instance: Incident, created: bool, **kwargs):
             message="Incident ownership reassigned.",
             metadata={"old_owner_id": old["owner_id"], "new_owner_id": instance.owner_id},
         )
+
+    if "severity" in old and old["severity"] != instance.severity:
+        changes["severity"] = {"from": old["severity"], "to": instance.severity}
 
     if changes:
         AuditLog.objects.create(

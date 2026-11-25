@@ -1,72 +1,63 @@
-import React, { useState, useEffect } from 'react';
-import { FormDialog } from '../ui/FormDialog';
-import { useToast } from '../ui/Toast';
-import { reportsApi } from '../../api/reports';
-import { useAuth } from '../../hooks/useAuth';
+import { useId, useState } from 'react';
 import type { Report } from '../../types';
+import { FormDialog } from '../ui/FormDialog';
+import { reportsApi } from '../../api/reports';
+import { requestError, requestFields } from '../../api/errors';
 
-const TYPES = ['daily','weekly','monthly','custom'];
+interface Props { onClose: () => void; onSaved: (report: Report) => void }
 
-interface Props { open: boolean; onClose: () => void; onSaved: () => void; }
+function dateInput(date: Date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-');
+}
 
-export function ReportForm({ open, onClose, onSaved }: Props) {
-  const toast = useToast();
-  const { user } = useAuth();
-  const today = new Date().toISOString().split('T')[0];
-  const weekAgo = new Date(Date.now() - 7*86400000).toISOString().split('T')[0];
+export function ReportForm({ onClose, onSaved }: Props) {
+  const id = useId();
+  const today = new Date();
+  const [title, setTitle] = useState('');
+  const [start, setStart] = useState(() => dateInput(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 6)));
+  const [end, setEnd] = useState(() => dateInput(today));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [fields, setFields] = useState<Partial<Record<'title' | 'period_start' | 'period_end', string>>>({});
 
-  const [title, setTitle]         = useState('');
-  const [type, setType]           = useState('weekly');
-  const [dateFrom, setDateFrom]   = useState(weekAgo);
-  const [dateTo, setDateTo]       = useState(today);
-  const [loading, setLoading]     = useState(false);
-  const [errors, setErrors]       = useState<Record<string,string>>({});
-
-  useEffect(() => { if (open) { setTitle(''); setType('weekly'); setDateFrom(weekAgo); setDateTo(today); setErrors({}); } }, [open]);
-
-  const validate = () => {
-    const e: Record<string,string> = {};
-    if (!title.trim()) e.title = 'Title required';
-    if (dateFrom > dateTo) e.date = 'From must be before To';
-    setErrors(e);
-    return !Object.keys(e).length;
-  };
-
-  const handleSubmit = async () => {
-    if (!validate()) return;
-    setLoading(true);
+  async function save() {
+    if (saving) return;
+    setError('');
+    const issues: typeof fields = {};
+    if (!title.trim()) issues.title = 'Enter a report title.';
+    if (!start) issues.period_start = 'Choose a start date.';
+    if (!end) issues.period_end = 'Choose an end date.';
+    else if (start > end) issues.period_end = 'Choose an end date on or after the start date.';
+    setFields(issues);
+    if (Object.keys(issues).length) return;
+    setSaving(true);
     try {
-      await reportsApi.generate({ title, report_type: type, date_from: dateFrom, date_to: dateTo, tenant: user?.tenant! });
-      toast('success', 'Report generated');
-      onSaved(); onClose();
-    } catch { toast('error', 'Failed to generate report'); }
-    finally { setLoading(false); }
-  };
+      const { data } = await reportsApi.generate({ title: title.trim(), period_start: start, period_end: end });
+      onSaved(data);
+    } catch (err) {
+      const next = requestFields(err, ['title', 'period_start', 'period_end']);
+      setFields(next);
+      if (!Object.keys(next).length) setError(requestError(err, 'Could not generate the report.'));
+    } finally { setSaving(false); }
+  }
 
-  return (
-    <FormDialog open={open} title="Generate Report" onClose={onClose} onSubmit={handleSubmit} submitLoading={loading} submitLabel="Generate">
-      <div className="form-group">
-        <label>Title</label>
-        <input value={title} onChange={e => setTitle(e.target.value)} placeholder="Weekly Security Report" />
-        {errors.title && <div className="form-error">{errors.title}</div>}
-      </div>
-      <div className="form-group">
-        <label>Report Type</label>
-        <select value={type} onChange={e => setType(e.target.value)}>
-          {TYPES.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>)}
-        </select>
-      </div>
-      <div className="form-row">
-        <div className="form-group">
-          <label>Date From</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
-        </div>
-        <div className="form-group">
-          <label>Date To</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
-        </div>
-      </div>
-      {errors.date && <div className="form-error">{errors.date}</div>}
-    </FormDialog>
-  );
+  return <FormDialog open title="Generate report" onClose={() => { if (!saving) onClose(); }}
+    onSubmit={save} submitLoading={saving} submitLabel="Generate report">
+    <p className="form-hint">Save a snapshot of your organization’s activity for the selected date range.</p>
+    <div className="form-group">
+      <label htmlFor={id + '-title'}>Report title</label>
+      <input aria-invalid={!!fields.title} aria-describedby={fields.title ? id + "-title-error" : undefined} id={id + '-title'} value={title} onChange={e => setTitle(e.target.value)} maxLength={500}
+        placeholder="Weekly security operations" autoFocus />
+      {fields.title && <p id={id + "-title-error"} className="form-error" role="alert">{fields.title}</p>}
+    </div>
+    <div className="form-row">
+      <div className="form-group"><label htmlFor={id + '-start'}>Start date</label>
+        <input aria-invalid={!!fields.period_start} aria-describedby={fields.period_start ? id + "-start-error" : undefined} id={id + '-start'} type="date" value={start} onChange={e => setStart(e.target.value)} />
+      {fields.period_start && <p id={id + "-start-error"} className="form-error" role="alert">{fields.period_start}</p>}</div>
+      <div className="form-group"><label htmlFor={id + '-end'}>End date</label>
+        <input aria-invalid={!!fields.period_end} aria-describedby={fields.period_end ? id + "-end-error" : undefined} id={id + '-end'} type="date" value={end} onChange={e => setEnd(e.target.value)} />
+      {fields.period_end && <p id={id + "-end-error"} className="form-error" role="alert">{fields.period_end}</p>}</div>
+    </div>
+    {error && <p role="alert" className="form-error">{error}</p>}
+  </FormDialog>;
 }

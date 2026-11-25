@@ -5,6 +5,7 @@ import os
 from django.conf import settings
 from rest_framework import serializers
 from .models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
+from apps.core.models import User
 from apps.core.serializers import AuditLogSerializer
 
 
@@ -42,10 +43,19 @@ class IncidentSerializer(serializers.ModelSerializer):
         return obj.alerts.count()
 
 
+def tenant_member(user, request):
+    if user and (user.tenant_id != request.user.tenant_id or not user.is_active):
+        raise serializers.ValidationError("Choose an active member of your organization.")
+    return user
+
+
 class IncidentCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Incident
         fields = ["title", "description", "severity", "owner"]
+
+    def validate_owner(self, value):
+        return tenant_member(value, self.context["request"])
 
 
 class IncidentTransitionSerializer(serializers.Serializer):
@@ -64,6 +74,11 @@ class IncidentTransitionSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"new_status": f"Cannot transition from '{incident.status}' to '{st}'. Allowed: {allowed}"}
             )
+        if st == "resolved":
+            if not attrs.get("resolution_summary"):
+                raise serializers.ValidationError({"resolution_summary": "A resolution summary is required."})
+            if incident.actions.filter(required=True).exclude(status="completed").exists():
+                raise serializers.ValidationError({"new_status": "Complete all required tasks before resolving."})
         return attrs
 
 
@@ -76,7 +91,7 @@ class TimelineEntrySerializer(serializers.ModelSerializer):
             "id", "incident", "tenant", "actor", "actor_detail",
             "entry_type", "message", "metadata", "created_at",
         ]
-        read_only_fields = ["id", "incident", "tenant", "actor", "created_at"]
+        read_only_fields = ["id", "incident", "tenant", "actor", "created_at", "metadata", "entry_type"]
 
     def get_actor_detail(self, obj):
         if obj.actor_id:
@@ -121,10 +136,32 @@ class EvidenceUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f"File type '{value.content_type}' is not allowed."
             )
+        signatures = {"application/pdf": b"%PDF-", "image/png": b"\x89PNG\r\n\x1a\n", "image/jpeg": b"\xff\xd8\xff"}
+        header = value.read(8192)
+        value.seek(0)
+        signature = signatures.get(value.content_type)
+        if signature and not header.startswith(signature):
+            raise serializers.ValidationError("The file contents do not match its declared type.")
+        if value.content_type == "text/plain":
+            try:
+                header.decode("utf-8")
+            except UnicodeDecodeError:
+                raise serializers.ValidationError("Upload UTF-8 text.")
+            if b"\x00" in header:
+                raise serializers.ValidationError("Upload a text file.")
         return value
 
 
+class PlaybookApplicationSerializer(serializers.Serializer):
+    playbook_id = serializers.IntegerField(min_value=1)
+    assignee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+
+    def validate_assignee(self, value):
+        return tenant_member(value, self.context["request"])
+
+
 class PlaybookStepSerializer(serializers.ModelSerializer):
+    position = serializers.IntegerField(min_value=1)
     class Meta:
         model = PlaybookStep
         fields = ["id", "playbook", "position", "title", "instructions", "required"]
@@ -160,8 +197,11 @@ class ActionSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = [
             "id", "tenant", "incident", "created_at", "updated_at",
-            "completed_at", "completed_by",
+            "completed_at", "completed_by", "playbook_step", "status", "completion_notes",
         ]
+
+    def validate_assignee(self, value):
+        return tenant_member(value, self.context["request"])
 
     def get_assignee_detail(self, obj):
         if obj.assignee_id:
@@ -170,15 +210,21 @@ class ActionSerializer(serializers.ModelSerializer):
 
 
 class ActionTransitionSerializer(serializers.Serializer):
+    assignee = serializers.PrimaryKeyRelatedField(queryset=User.objects.all(), required=False, allow_null=True)
+
+    def validate_assignee(self, value):
+        return tenant_member(value, self.context["request"])
+
     new_status = serializers.ChoiceField(choices=[c[0] for c in Action.STATUS_CHOICES], required=False)
     status = serializers.ChoiceField(choices=[c[0] for c in Action.STATUS_CHOICES], required=False)
     completion_notes = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):
         st = attrs.get("new_status") or attrs.get("status")
-        if not st:
-            raise serializers.ValidationError({"new_status": "Status is required."})
-        attrs["new_status"] = st
+        if not st and "assignee" not in attrs:
+            raise serializers.ValidationError({"new_status": "Choose a status or assignee."})
+        if st:
+            attrs["new_status"] = st
         return attrs
 
 

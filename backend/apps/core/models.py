@@ -67,6 +67,12 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     email = models.EmailField(unique=True, db_index=True)
     full_name = models.CharField(max_length=255)
+    theme = models.CharField(
+        max_length=6, choices=[("system", "System"), ("dark", "Dark"), ("light", "Light")], default="system",
+    )
+    dashboard_refresh_seconds = models.PositiveSmallIntegerField(
+        choices=[(0, "Off"), (15, "15 seconds"), (30, "30 seconds"), (60, "60 seconds")], default=30,
+    )
     role = models.CharField(max_length=30, choices=ROLE_CHOICES, db_index=True)
     managed_role = models.ForeignKey(
         ManagedRole, null=True, blank=True, on_delete=models.PROTECT, related_name="users",

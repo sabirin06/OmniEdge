@@ -20,6 +20,7 @@ import { Simulator } from './pages/Simulator';
 import { Playbooks } from './pages/Playbooks';
 import { Reports } from './pages/Reports';
 import { Audit } from './pages/Audit';
+import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
 
 export default function App() {
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="/tenants" element={<Tenants />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/users" element={<Users />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<NotFound />} />
         </Route>

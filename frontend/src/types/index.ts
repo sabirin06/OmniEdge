@@ -84,6 +84,10 @@ export interface LogSource {
 
 // ===================== EVENT =====================
 export interface SecurityEvent {
+  risk_severity?: Severity | null;
+  reviewed_risk?: Severity | null;
+  risk_review_reason?: string;
+  metadata?: Record<string, unknown>;
   occurred_at: string;
   received_at: string;
   id: number;
@@ -129,6 +133,9 @@ export interface Rule {
 
 // ===================== ALERT =====================
 export interface Alert {
+  event?: number | null;
+  event_detail?: Pick<SecurityEvent, 'id' | 'event_type' | 'severity' | 'occurred_at'>;
+  dismissal_reason?: string;
   rule_snapshot?: { name?: string; rule_name?: string };
   assignee?: number | null;
   assignee_detail?: { full_name: string } | null;
@@ -237,16 +244,25 @@ export interface Playbook {
 }
 
 // ===================== REPORT =====================
+export interface ReportMetrics {
+  events: { total: number; by_severity: Record<string, number> };
+  alerts: { total: number; by_severity: Record<string, number> };
+  incidents: { total: number; by_status: Record<string, number> };
+  open_workload: { alerts: number; incidents: number };
+  mean_time_to_detect_minutes?: number | null;
+  mean_time_to_respond_minutes?: number | null;
+  method_version?: number;
+}
+
 export interface Report {
   id: number;
   title: string;
-  report_type: 'daily' | 'weekly' | 'monthly' | 'custom';
-  date_from: string;
-  date_to: string;
-  generated_by: number;
-  generated_by_name: string;
+  period_start: string;
+  period_end: string;
+  generated_by: number | null;
+  generated_by_detail?: { id: number; email: string } | null;
   tenant: number;
-  summary: Record<string, unknown>;
+  metrics: Partial<ReportMetrics>;
   created_at: string;
 }
 
@@ -265,15 +281,31 @@ export interface AuditLog {
 }
 
 // ===================== DASHBOARD =====================
-export interface DashboardStats {
+export interface TenantDashboard {
+  scope: 'tenant';
+  as_of: string;
   total_alerts_new: number;
   active_incidents: number;
   events_24h: number;
   open_tasks: number;
+  activity: { day: string; events: number; alerts: number }[];
   alerts_by_severity: { severity: string; count: number }[];
   incidents_by_status: { status: string; count: number }[];
   recent_alerts: Alert[];
 }
+
+export interface PlatformDashboard {
+  scope: 'platform';
+  as_of: string;
+  tenants: number;
+  active_tenants: number;
+  suspended_tenants: number;
+  total_users: number;
+  users_by_role: { role: string; count: number }[];
+  recent_tenants: Tenant[];
+}
+
+export type DashboardStats = TenantDashboard | PlatformDashboard;
 
 // ===================== PAGINATION =====================
 export interface PaginatedResponse<T> {
@@ -284,7 +316,13 @@ export interface PaginatedResponse<T> {
 }
 
 // ===================== AUTH =====================
+export type ThemePreference = 'system' | 'dark' | 'light';
+export type DashboardRefresh = 0 | 15 | 30 | 60;
+
 export interface AuthUser {
+  theme?: ThemePreference;
+  dashboard_refresh_seconds?: DashboardRefresh;
+  tenant_detail?: { id: number; name: string } | null;
   id: number;
   email: string;
   username: string;

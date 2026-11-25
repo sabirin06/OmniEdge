@@ -1,14 +1,28 @@
 import React, { useState } from 'react';
 import { Play, Zap, CheckCircle2, ShieldAlert, AlertTriangle, ArrowRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 import { useApi } from '../hooks/useApi';
 import { logSourcesApi } from '../api/logSources';
 import { requestError } from '../api/errors';
 import { eventsApi } from '../api/events';
 
+function SourcePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const sources = useApi(() => logSourcesApi.list({ enabled: true }));
+  return <div className="form-group">
+    <label htmlFor="simulator-source">Log source</label>
+    <select id="simulator-source" value={value} onChange={e => onChange(e.target.value)}>
+      <option value="">Use an enabled source automatically</option>
+      {sources.data?.results.map(source => <option value={source.id} key={source.id}>{source.name}</option>)}
+    </select>
+    {sources.error && <p role="alert">Could not load log sources. <button type="button" className="btn btn-ghost" onClick={sources.refresh}>Retry</button></p>}
+  </div>;
+}
+
 export function Simulator() {
   const navigate = useNavigate();
-  const sources = useApi(() => logSourcesApi.list({ enabled: true }));
+  const { user } = useAuth();
+  const canPickSource = user?.role === "customer_admin" || user?.role === "soc_lead";
   const [sourceId, setSourceId] = useState('');
   const [error, setError] = useState('');
   const [eventType, setEventType] = useState('login_failed');
@@ -48,15 +62,9 @@ export function Simulator() {
 
       <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>
         <form onSubmit={handleSimulate}>
-          <div className="form-group">
-            <label htmlFor="simulator-source">Log source</label>
-            <select id="simulator-source" value={sourceId} onChange={e => setSourceId(e.target.value)}>
-              <option value="">Use an enabled source automatically</option>
-              {sources.data?.results.map(source => <option value={source.id} key={source.id}>{source.name}</option>)}
-            </select>
-          </div>
-          {sources.error && <p role="alert">Could not load log sources. <button type="button" className="btn btn-ghost" onClick={sources.refresh}>Retry</button></p>}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+          {canPickSource ? <SourcePicker value={sourceId} onChange={setSourceId} />
+            : <p className="form-hint">An enabled source in your organization will be selected automatically.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 240px), 1fr))', gap: '20px', marginBottom: '24px' }}>
             <div>
               <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '8px', color: 'var(--color-text-secondary)' }}>
                 Simulated Threat Scenario
@@ -64,7 +72,7 @@ export function Simulator() {
               <select
                 value={eventType}
                 onChange={e => setEventType(e.target.value)}
-                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
+                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
               >
                 <option value="login_failed">Brute Force Authentication Failure (login_failed)</option>
                 <option value="privilege_escalation">Suspicious Sudo / Privilege Escalation (privilege_escalation)</option>
@@ -81,7 +89,7 @@ export function Simulator() {
               <select
                 value={severity}
                 onChange={e => setSeverity(e.target.value)}
-                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
+                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
               >
                 <option value="critical">Critical</option>
                 <option value="high">High</option>
@@ -101,7 +109,7 @@ export function Simulator() {
                 max={50}
                 value={batchCount}
                 onChange={e => setBatchCount(Number(e.target.value))}
-                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px', boxSizing: 'border-box' }}
+                style={{ width: '100%', padding: '10px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px', boxSizing: 'border-box' }}
               />
             </div>
           </div>
@@ -120,15 +128,15 @@ export function Simulator() {
 
       {error && <p className="form-error" role="alert">{error}</p>}
       {result && (
-        <div className="card" style={{ padding: '24px', border: '1px solid #3FB950' }}>
+        <div className="card" style={{ padding: '24px', border: '1px solid var(--color-success)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-            <CheckCircle2 size={20} color="#3FB950" />
-            <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0, color: '#3FB950' }}>
+            <CheckCircle2 size={20} color="var(--color-success)" />
+            <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0, color: 'var(--color-success)' }}>
               Simulation Batch Completed Successfully!
             </h2>
           </div>
 
-          <p style={{ fontSize: '13px', color: '#C9D1D9', margin: '0 0 16px 0' }}>
+          <p style={{ fontSize: '13px', color: 'var(--color-text-primary)', margin: '0 0 16px 0' }}>
             {result.created} events saved. {result.alerts_created} alerts created.
           </p>
 

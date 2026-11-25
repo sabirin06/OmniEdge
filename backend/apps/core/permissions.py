@@ -1,7 +1,7 @@
 """
 Custom DRF permission classes for OmniEdge role-based access control.
 """
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 
 class IsPlatformAdmin(BasePermission):
@@ -38,13 +38,30 @@ class IsSOCLead(BasePermission):
 
 
 class IsSOCAnalyst(BasePermission):
-    """Allow access to SOC Analysts and above."""
-
+    """Tenant staff eligible to view monitoring records."""
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and request.user.role in ("soc_analyst", "soc_lead", "customer_admin", "platform_admin")
+        user = request.user
+        return user.is_authenticated and user.tenant_id is not None and user.role in (
+            "soc_analyst", "soc_lead", "customer_admin",
+        )
+
+
+class IsTenantCustomerAdmin(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return user.is_authenticated and user.tenant_id is not None and user.role == "customer_admin"
+
+
+class IsTenantLead(BasePermission):
+    def has_permission(self, request, view):
+        user = request.user
+        return user.is_authenticated and user.tenant_id is not None and user.role == "soc_lead"
+
+
+class CanAccessLogSources(BasePermission):
+    def has_permission(self, request, view):
+        return IsTenantCustomerAdmin().has_permission(request, view) or (
+            request.method in SAFE_METHODS and IsTenantLead().has_permission(request, view)
         )
 
 
@@ -58,25 +75,27 @@ class IsTenantMember(BasePermission):
         return tenant_id is not None and tenant_id == getattr(request.user, "tenant_id", None)
 
 
-class CanManagePlaybooks(BasePermission):
-    """SOC Lead and above can write playbooks; analysts can read."""
-
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-        if request.method in ("GET", "HEAD", "OPTIONS"):
-            return request.user.role in (
-                "soc_analyst", "soc_lead", "customer_admin", "platform_admin"
-            )
-        return request.user.role in ("soc_lead", "customer_admin", "platform_admin")
+class CanManagePlaybooks(IsTenantLead):
+    """Playbook template access is limited to SOC Leads."""
 
 
 class CanGenerateReport(BasePermission):
-    """Customer Admin and SOC Lead can generate/view reports."""
+    """Analysts can read reports; tenant admins and SOC Leads can generate them."""
 
     def has_permission(self, request, view):
-        return bool(
-            request.user
-            and request.user.is_authenticated
-            and request.user.role in ("customer_admin", "soc_lead", "platform_admin")
-        )
+        if not request.user or not request.user.is_authenticated or request.user.tenant_id is None:
+            return False
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return request.user.role in ("customer_admin", "soc_lead", "soc_analyst")
+        return request.user.role in ("customer_admin", "soc_lead")
+
+
+class IsIncidentResponder(BasePermission):
+    """Tenant responders write workflow records; Customer Admins can review them."""
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated or user.tenant_id is None:
+            return False
+        if request.method in SAFE_METHODS and user.role == "customer_admin":
+            return True
+        return user.role in ("soc_analyst", "soc_lead")

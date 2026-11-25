@@ -1,182 +1,74 @@
-import React, { useEffect, useState } from 'react';
-import { BookOpen, Plus, CheckCircle, ListOrdered, Shield } from 'lucide-react';
+﻿import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { playbooksApi } from '../api/playbooks';
-import { FormDialog } from '../components/ui/FormDialog';
-import { useAuth } from '../contexts/AuthContext';
+import { requestError } from '../api/errors';
+import { useApi } from '../hooks/useApi';
+import { Pagination } from '../components/ui/Pagination';
+import { useToast } from '../components/ui/Toast';
 
 export function Playbooks() {
-  const { user } = useAuth();
-  const [playbooks, setPlaybooks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
+  const toast = useToast();
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [selected, setSelected] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const list = useApi(() => playbooksApi.list({ page, search }), [page, search]);
+  const records = list.data?.results ?? [];
+  const book = records.find(item => item.id === selected) as any;
+  async function save(event: FormEvent<HTMLFormElement>, action: (data: FormData) => Promise<unknown>, message: string, reset = false) {
+    event.preventDefault();
+    if (saving) return;
+    const form = event.currentTarget;
+    setSaving(true); setError('');
+    try { await action(new FormData(form)); if (reset) form.reset(); list.refresh(); toast('success', message); }
+    catch (err) { setError(requestError(err, 'Could not save the playbook.')); }
+    finally { setSaving(false); }
+  }
 
-  // Form states
-  const [name, setName] = useState('');
-  const [category, setCategory] = useState('Authentication');
-  const [description, setDescription] = useState('');
-
-  const loadPlaybooks = async () => {
-    setLoading(true);
-    try {
-      const res = await playbooksApi.list();
-      const data = res.data.results ? res.data.results : (Array.isArray(res.data) ? res.data : []);
-      setPlaybooks(data);
-    } catch (err) {
-      console.error('Failed to load playbooks', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadPlaybooks();
-  }, []);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await playbooksApi.create({
-        name,
-        category,
-        description,
-        tenant: user?.tenant || 1,
-      } as any);
-      setCreateOpen(false);
-      setName('');
-      setDescription('');
-      await loadPlaybooks();
-    } catch (err) {
-      console.error('Failed to create playbook', err);
-    }
-  };
-
-  return (
-    <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Response Playbooks</h1>
-          <p style={{ margin: 0, color: '#8B949E', fontSize: '13px' }}>
-            Standard operating containment workflows automatically applied to emerging incidents
-          </p>
-        </div>
-
-        <button
-          onClick={() => setCreateOpen(true)}
-          className="btn btn-primary"
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <Plus size={16} />
-          <span>New Playbook</span>
-        </button>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '20px' }}>
-        {playbooks.length > 0 ? (
-          playbooks.map(pb => (
-            <div key={pb.id} className="card" style={{ padding: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
-                <div>
-                  <span className="badge badge-subtle" style={{ marginBottom: '6px', display: 'inline-block' }}>
-                    {pb.category || 'Incident Response'}
-                  </span>
-                  <h2 style={{ fontSize: '16px', fontWeight: '600', margin: 0, color: '#E6EDF3' }}>
-                    {pb.name}
-                  </h2>
-                </div>
-                <BookOpen size={20} color="#58A6FF" />
-              </div>
-
-              <p style={{ fontSize: '13px', color: '#8B949E', lineHeight: '1.5', margin: '0 0 16px 0' }}>
-                {pb.description || 'Structured containment procedure.'}
-              </p>
-
-              <div style={{ borderTop: '1px solid #30363D', paddingTop: '14px' }}>
-                <span style={{ fontSize: '12px', fontWeight: '600', color: '#8B949E', display: 'block', marginBottom: '8px' }}>
-                  Containment Action Steps:
-                </span>
-                {pb.steps && pb.steps.length > 0 ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {pb.steps.map((st: any) => (
-                      <div key={st.id || st.position} style={{ fontSize: '12px', display: 'flex', alignItems: 'center', gap: '6px', color: '#C9D1D9' }}>
-                        <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#21262D', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#58A6FF' }}>
-                          {st.position}
-                        </span>
-                        <span>{st.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <span style={{ fontSize: '12px', color: '#6E7681', fontStyle: 'italic' }}>
-                    3 containment tasks configured
-                  </span>
-                )}
-              </div>
-            </div>
-          ))
-        ) : (
-          <div className="card" style={{ padding: '36px', textAlign: 'center', color: '#8B949E', gridColumn: 'span 2' }}>
-            {loading ? 'Loading playbooks...' : 'No playbooks registered.'}
-          </div>
-        )}
-      </div>
-
-      {/* New Playbook Modal */}
-      <FormDialog
-        isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Author Incident Playbook"
-      >
-        <form onSubmit={handleCreate}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Playbook Title
-            </label>
-            <input
-              type="text"
-              required
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="e.g. Ransomware Host Isolation Protocol"
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Category
-            </label>
-            <input
-              type="text"
-              value={category}
-              onChange={e => setCategory(e.target.value)}
-              placeholder="e.g. Malware, Data Exfiltration, Account Takeover"
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Overview & Objectives
-            </label>
-            <textarea
-              rows={3}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Defines standard containment requirements..."
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-            <button type="button" onClick={() => setCreateOpen(false)} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Save Playbook
-            </button>
-          </div>
-        </form>
-      </FormDialog>
+  return <section>
+    <h1>Response playbooks</h1>
+    <div className="form-group"><label>Search playbooks <input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label></div>
+    {list.loading && <p role="status">Loading playbooks…</p>}
+    {list.error && <p role="alert">Could not load playbooks. <button onClick={list.refresh}>Retry</button></p>}
+    {error && <p role="alert" className="form-error">{error}</p>}
+    {!records.length && !list.loading && !list.error && <p>No playbooks found.</p>}
+    <div className="filter-bar">
+      <button className="btn btn-primary" onClick={() => { setSelected(null); setError(''); }}>New playbook</button>
+      {records.map(record => <button className="btn btn-secondary" key={record.id}
+        onClick={() => { setSelected(record.id); setError(''); }}>{record.name}</button>)}
     </div>
-  );
+    <Pagination page={page} pageSize={50} total={list.data?.count ?? 0} onPageChange={setPage} />
+    <div className="card" key={book?.id ?? 'new'}>
+      <h2>{book ? 'Edit playbook' : 'Create playbook'}</h2>
+      <form onSubmit={event => save(event, async data => {
+        const payload = { name: String(data.get('name')), category: String(data.get('category')),
+          description: String(data.get('description')), enabled: data.has('enabled') };
+        if (book) await playbooksApi.update(book.id, payload);
+        else setSelected((await playbooksApi.create(payload)).data.id);
+      }, 'Playbook saved')}>
+        <div className="form-group"><label>Name <input name="name" required maxLength={255} defaultValue={book?.name} /></label></div>
+        <div className="form-group"><label>Category <input name="category" maxLength={100} defaultValue={book?.category} /></label></div>
+        <div className="form-group"><label>Description <textarea name="description" defaultValue={book?.description} /></label></div>
+        <div className="form-group"><label><input type="checkbox" name="enabled" defaultChecked={book?.enabled ?? true} /> Enabled</label></div>
+        <button disabled={saving} className="btn btn-primary">Save playbook</button>
+      </form>
+    </div>
+    {book && <div className="card">
+      <h2>Ordered steps</h2>
+      {[...(book.steps ?? []), null].map((step, index, steps) => (
+        <form key={step?.id ?? 'new'} className="card" onSubmit={event => save(event, data => {
+          const payload = { position: Number(data.get('position')), title: String(data.get('title')),
+            instructions: String(data.get('instructions')), required: data.has('required') };
+          return step ? playbooksApi.updateStep(book.id, step.id, payload) : playbooksApi.createStep(book.id, payload);
+        }, step ? 'Step updated' : 'Step added', !step)}>
+          <h3>{step ? `Step ${step.position}` : 'Add a step'}</h3>
+          <div className="form-group"><label>Position <input type="number" name="position" min={1} required defaultValue={step?.position ?? ((steps[index - 1]?.position ?? 0) + 1)} /></label></div>
+          <div className="form-group"><label>Title <input name="title" required maxLength={255} defaultValue={step?.title} /></label></div>
+          <div className="form-group"><label>Instructions <textarea name="instructions" required defaultValue={step?.instructions} /></label></div>
+          <div className="form-group"><label><input type="checkbox" name="required" defaultChecked={step?.required ?? true} /> Required for resolution</label></div>
+          <button disabled={saving} className="btn btn-secondary">{step ? 'Update step' : 'Add step'}</button>
+        </form>))}
+    </div>}
+  </section>;
 }

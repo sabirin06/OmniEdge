@@ -67,16 +67,17 @@ class LogSourceCreateSerializer(LogSourceSerializer):
 
 
 class EventSerializer(serializers.ModelSerializer):
+    risk_severity = serializers.CharField(read_only=True, allow_null=True)
     source_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Event
         fields = [
             "id", "tenant", "source", "source_name",
-            "external_event_id", "event_type", "severity", "message",
+            "external_event_id", "event_type", "severity", "risk_severity", "reviewed_risk", "risk_review_reason", "message",
             "source_ip", "metadata", "payload_hash", "occurred_at", "received_at",
         ]
-        read_only_fields = ["id", "tenant", "payload_hash", "received_at"]
+        read_only_fields = ["id", "tenant", "payload_hash", "received_at", "reviewed_risk", "risk_review_reason"]
 
     def get_source_name(self, obj):
         return obj.source.name if obj.source_id else None

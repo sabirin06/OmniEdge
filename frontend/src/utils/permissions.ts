@@ -1,62 +1,25 @@
-import type { UserRole } from '../types';
+﻿import type { UserRole } from '../types';
 
-type Permission =
-  | 'view:dashboard'
-  | 'view:alerts'
-  | 'view:incidents'
-  | 'view:events'
-  | 'view:rules'
-  | 'view:tenants'
-  | 'view:users'
-  | 'view:assets'
-  | 'view:log-sources'
-  | 'view:simulator'
-  | 'view:playbooks'
-  | 'view:reports'
-  | 'view:audit'
-  | 'action:triage'
-  | 'action:escalate'
-  | 'action:create-incident'
-  | 'action:manage-rules'
-  | 'action:manage-playbooks'
-  | 'action:manage-users';
+const tenantStaff: UserRole[] = ['customer_admin', 'soc_analyst', 'soc_lead'];
 
-const LEAD_PERMISSIONS: Permission[] = [
-  'view:dashboard', 'view:alerts', 'view:incidents', 'view:events',
-  'view:rules', 'view:assets', 'view:log-sources', 'view:playbooks',
-  'view:reports', 'view:audit',
-  'action:triage', 'action:escalate', 'action:create-incident',
-  'action:manage-rules', 'action:manage-playbooks',
-];
-
-const ANALYST_PERMISSIONS: Permission[] = [
-  'view:dashboard', 'view:alerts', 'view:incidents', 'view:events',
-  'view:assets', 'view:reports',
-  'action:triage', 'action:escalate', 'action:create-incident',
-];
-
-const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
-  platform_admin: [
-    'view:dashboard', 'view:tenants', 'view:users', 'action:manage-users',
-  ],
-  customer_admin: [
-    'view:dashboard', 'view:alerts', 'view:incidents', 'view:events',
-    'view:users', 'view:assets', 'view:log-sources', 'view:simulator',
-    'view:reports', 'view:audit', 'action:manage-users',
-    'action:triage', 'action:escalate', 'action:create-incident',
-  ],
-  soc_lead: LEAD_PERMISSIONS,
-  lead: LEAD_PERMISSIONS,
-  soc_analyst: ANALYST_PERMISSIONS,
-  analyst: ANALYST_PERMISSIONS,
+const pageRoles: Record<string, readonly UserRole[]> = {
+  alerts: tenantStaff,
+  incidents: tenantStaff,
+  events: tenantStaff,
+  assets: tenantStaff,
+  reports: tenantStaff,
+  simulator: tenantStaff,
+  rules: ['soc_lead'],
+  playbooks: ['soc_lead'],
+  'log-sources': ['customer_admin', 'soc_lead'],
+  audit: ['platform_admin', 'customer_admin', 'soc_lead'],
+  users: ['platform_admin', 'customer_admin'],
+  tenants: ['platform_admin'],
+  roles: ['platform_admin'],
 };
 
-export function can(role: UserRole | undefined, permission: Permission): boolean {
+export function canAccessPage(role: UserRole | undefined, pathname: string): boolean {
   if (!role) return false;
-  return ROLE_PERMISSIONS[role]?.includes(permission) ?? false;
-}
-
-export function hasRole(role: UserRole | undefined, ...roles: UserRole[]): boolean {
-  if (!role) return false;
-  return roles.includes(role);
+  const section = pathname.split('/').filter(Boolean)[0]?.toLowerCase() ?? '';
+  return pageRoles[section]?.includes(role) ?? true;
 }

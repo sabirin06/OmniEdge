@@ -2,29 +2,45 @@
 Incidents views: Incident, Timeline, Evidence, Playbook, Action, Report, AuditLog.
 """
 import logging
-import os
+from pathlib import Path
+from uuid import uuid4
+from django.db import transaction
+from drf_spectacular.utils import extend_schema, OpenApiTypes
+from rest_framework.exceptions import ValidationError, PermissionDenied
+from rest_framework.parsers import MultiPartParser
 from django.conf import settings
-from django.db.models import Avg, Count, Q
 from django.http import FileResponse
 from django.utils import timezone
 from rest_framework import generics, status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.core.permissions import IsSOCAnalyst, IsSOCLead, IsCustomerAdmin, CanGenerateReport, CanManagePlaybooks
+from apps.core.permissions import IsIncidentResponder, CanGenerateReport, CanManagePlaybooks
 from apps.core.utils import sha256_file
 from .models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
+from .reporting import report_metrics
 from .serializers import (
     IncidentSerializer, IncidentCreateSerializer, IncidentTransitionSerializer,
     TimelineEntrySerializer, EvidenceSerializer, EvidenceUploadSerializer,
     PlaybookSerializer, PlaybookStepSerializer,
-    ActionSerializer, ActionTransitionSerializer,
+    ActionSerializer, ActionTransitionSerializer, PlaybookApplicationSerializer,
     ReportSerializer, ReportCreateSerializer,
 )
 from apps.core.serializers import AuditLogSerializer
 
 logger = logging.getLogger(__name__)
+
+
+def audit(request, obj, action, changes):
+    AuditLog.objects.create(tenant=obj.tenant, actor=request.user, action=action,
+                            entity_type=type(obj).__name__, entity_id=str(obj.pk), changes=changes,
+                            request_id=getattr(request, "request_id", ""))
+
+
+def require_open(incident):
+    if incident.status in ("resolved", "closed"):
+        raise ValidationError({"status": "This case is already resolved or closed."})
 
 
 def get_tenant(user):
@@ -36,8 +52,8 @@ def get_tenant(user):
 # ---------------------------------------------------------------------------
 
 class IncidentListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsSOCAnalyst]
-    search_fields = ["title", "reference", "description"]
+    permission_classes = [IsIncidentResponder]
+    search_fields = ["title", "reference", "description", "owner__full_name"]
     ordering_fields = ["created_at", "severity", "status"]
     ordering = ["-created_at"]
 
@@ -61,10 +77,9 @@ class IncidentListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         tenant = get_tenant(self.request.user)
-        last = Incident.objects.filter(tenant=tenant).order_by("-id").first()
-        year = timezone.now().year
-        seq = (last.id if last else 0) + 1
-        ref = f"INC-{year}-{seq:04d}"
+        if tenant is None:
+            raise ValidationError({"tenant": "Use an organization account."})
+        ref = f"INC-{timezone.now().year}-{uuid4().hex[:12].upper()}"
         serializer.save(
             tenant=tenant,
             creator=self.request.user,
@@ -83,13 +98,27 @@ class IncidentListCreateView(generics.ListCreateAPIView):
 
 
 class IncidentDetailView(generics.RetrieveUpdateAPIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [IsIncidentResponder]
     serializer_class = IncidentSerializer
 
     def get_queryset(self):
         return Incident.objects.select_related("owner", "creator", "closed_by").filter(
             tenant=get_tenant(self.request.user)
         )
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
+
+    def get_object(self):
+        if self.request.method in ("PUT", "PATCH"):
+            incident = generics.get_object_or_404(
+                Incident.objects.select_for_update(), pk=self.kwargs["pk"], tenant=self.request.user.tenant,
+            )
+            require_open(incident)
+            self.check_object_permissions(self.request, incident)
+            return incident
+        return super().get_object()
 
     def get_serializer_class(self):
         if self.request.method in ("PUT", "PATCH"):
@@ -98,40 +127,37 @@ class IncidentDetailView(generics.RetrieveUpdateAPIView):
 
 
 class IncidentTransitionView(APIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [IsIncidentResponder]
 
+    @extend_schema(request=IncidentTransitionSerializer, responses=IncidentSerializer)
+    @transaction.atomic
     def post(self, request, pk):
-        try:
-            incident = Incident.objects.get(pk=pk, tenant=get_tenant(request.user))
-        except Incident.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        # Only SOC Lead+ can close
-        new_status = request.data.get("new_status")
-        if new_status == "closed" and request.user.role not in ("soc_lead", "customer_admin", "platform_admin"):
-            return Response({"detail": "Only SOC Lead or above can close an incident."}, status=status.HTTP_403_FORBIDDEN)
-
-        serializer = IncidentTransitionSerializer(
-            data=request.data, context={"incident": incident}
+        incident = generics.get_object_or_404(
+            Incident.objects.select_for_update(), pk=pk, tenant=get_tenant(request.user),
         )
+        serializer = IncidentTransitionSerializer(data=request.data, context={"incident": incident})
+        if (request.data.get("new_status") or request.data.get("status")) == "closed" and request.user.role != "soc_lead":
+            raise PermissionDenied("Only the SOC Lead can close an incident.")
         serializer.is_valid(raise_exception=True)
-
-        old_status = incident.status
-        incident.status = serializer.validated_data["new_status"]
-        if serializer.validated_data.get("resolution_summary"):
+        new_status = serializer.validated_data["new_status"]
+        incident.status = new_status
+        if new_status == "resolved":
             incident.resolution_summary = serializer.validated_data["resolution_summary"]
-        if incident.status == "resolved" and not incident.resolved_at:
             incident.resolved_at = timezone.now()
-        if incident.status == "closed":
+        if new_status == "closed":
             incident.closed_at = timezone.now()
             incident.closed_by = request.user
         incident.save()
-
+        if new_status == "closed":
+            for alert in incident.alerts.select_for_update().filter(tenant=incident.tenant):
+                alert.status = "resolved"
+                alert.save(update_fields=["status", "updated_at"])
         return Response(IncidentSerializer(incident).data)
 
 
 class IncidentLinkedAlertsView(generics.ListAPIView):
-    permission_classes = [IsSOCAnalyst]
+    from apps.monitoring.serializers import AlertSerializer as serializer_class
+    permission_classes = [IsIncidentResponder]
 
     def get_queryset(self):
         from apps.monitoring.models import Alert
@@ -152,7 +178,7 @@ class IncidentLinkedAlertsView(generics.ListAPIView):
 # ---------------------------------------------------------------------------
 
 class IncidentTimelineView(generics.ListCreateAPIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [IsIncidentResponder]
     serializer_class = TimelineEntrySerializer
 
     def get_queryset(self):
@@ -172,20 +198,27 @@ class IncidentTimelineView(generics.ListCreateAPIView):
         if not incident:
             from rest_framework.exceptions import NotFound
             raise NotFound()
-        serializer.save(
+        entry = serializer.save(
             incident=incident,
             tenant=incident.tenant,
             actor=self.request.user,
             entry_type="note",
         )
+        audit(self.request, incident, "incident.note_added", {"entry_id": entry.pk})
 
 
 # ---------------------------------------------------------------------------
 # Evidence
 # ---------------------------------------------------------------------------
 
+class CanAccessEvidence(BasePermission):
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and request.user.role in ("soc_analyst", "soc_lead")
+
+
 class IncidentEvidenceView(generics.ListAPIView):
-    permission_classes = [IsSOCAnalyst]
+    parser_classes = [MultiPartParser]
+    permission_classes = [CanAccessEvidence]
     serializer_class = EvidenceSerializer
 
     def get_queryset(self):
@@ -194,60 +227,59 @@ class IncidentEvidenceView(generics.ListAPIView):
             tenant=get_tenant(self.request.user),
         )
 
+    @extend_schema(request=EvidenceUploadSerializer, responses={201: EvidenceSerializer})
+    @transaction.atomic
     def post(self, request, pk):
-        try:
-            incident = Incident.objects.get(pk=pk, tenant=get_tenant(request.user))
-        except Incident.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        upload_serializer = EvidenceUploadSerializer(data=request.data)
-        upload_serializer.is_valid(raise_exception=True)
-
-        file = upload_serializer.validated_data["file"]
-        description = upload_serializer.validated_data.get("description", "")
-
-        # Compute SHA-256
+        incident = generics.get_object_or_404(Incident.objects.select_for_update(), pk=pk, tenant=request.user.tenant)
+        require_open(incident)
+        serializer = EvidenceUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        file = serializer.validated_data["file"]
+        description = serializer.validated_data.get("description", "")
         sha256 = sha256_file(file)
+        file.seek(0)
+        root = Path(settings.EVIDENCE_ROOT)
+        root.mkdir(parents=True, exist_ok=True)
+        stored_path = root / uuid4().hex
+        try:
+            with stored_path.open("xb") as dest:
+                for chunk in file.chunks():
+                    dest.write(chunk)
 
-        # Build storage path
-        tenant_dir = os.path.join(settings.MEDIA_ROOT, "evidence", str(incident.tenant_id), str(incident.pk))
-        os.makedirs(tenant_dir, exist_ok=True)
+            evidence = Evidence.objects.create(
+                incident=incident,
+                tenant=incident.tenant,
+                uploader=request.user,
+                original_filename=file.name,
+                stored_path=str(stored_path),
+                file_type=file.content_type,
+                file_size=file.size,
+                sha256=sha256,
+                description=description,
+            )
 
-        safe_name = f"{sha256[:16]}_{file.name}"
-        stored_path = os.path.join(tenant_dir, safe_name)
+            # Timeline entry
+            TimelineEntry.objects.create(
+                incident=incident,
+                tenant=incident.tenant,
+                actor=request.user,
+                entry_type="evidence_added",
+                message=f"Evidence '{file.name}' uploaded.",
+                metadata={"evidence_id": evidence.id, "sha256": sha256},
+            )
 
-        with open(stored_path, "wb+") as dest:
-            for chunk in file.chunks():
-                dest.write(chunk)
-
-        evidence = Evidence.objects.create(
-            incident=incident,
-            tenant=incident.tenant,
-            uploader=request.user,
-            original_filename=file.name,
-            stored_path=stored_path,
-            file_type=file.content_type,
-            file_size=file.size,
-            sha256=sha256,
-            description=description,
-        )
-
-        # Timeline entry
-        TimelineEntry.objects.create(
-            incident=incident,
-            tenant=incident.tenant,
-            actor=request.user,
-            entry_type="evidence_added",
-            message=f"Evidence '{file.name}' uploaded.",
-            metadata={"evidence_id": evidence.id, "sha256": sha256},
-        )
+            audit(request, incident, "incident.evidence_added", {"evidence_id": evidence.pk})
+        except Exception:
+            stored_path.unlink(missing_ok=True)
+            raise
 
         return Response(EvidenceSerializer(evidence).data, status=status.HTTP_201_CREATED)
 
 
 class EvidenceDownloadView(APIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [CanAccessEvidence]
 
+    @extend_schema(responses={(200, "application/octet-stream"): OpenApiTypes.BINARY})
     def get(self, request, pk, eid):
         try:
             incident = Incident.objects.get(pk=pk, tenant=get_tenant(request.user))
@@ -255,12 +287,14 @@ class EvidenceDownloadView(APIView):
         except (Incident.DoesNotExist, Evidence.DoesNotExist):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        if not os.path.exists(evidence.stored_path):
+        path = Path(evidence.stored_path).resolve()
+        roots = (Path(settings.EVIDENCE_ROOT).resolve(), (Path(settings.MEDIA_ROOT) / "evidence").resolve())
+        if not any(path.is_relative_to(root) for root in roots) or not path.is_file():
             return Response({"detail": "File not found on disk."}, status=status.HTTP_404_NOT_FOUND)
 
         response = FileResponse(
-            open(evidence.stored_path, "rb"),
-            content_type=evidence.file_type,
+            path.open("rb"),
+            content_type="application/octet-stream",
             as_attachment=True,
             filename=evidence.original_filename,
         )
@@ -279,11 +313,13 @@ class PlaybookListCreateView(generics.ListCreateAPIView):
     ordering = ["name"]
 
     def get_queryset(self):
-        return Playbook.objects.prefetch_related("steps").filter(
-            tenant=get_tenant(self.request.user)
-        )
+        qs = Playbook.objects.prefetch_related("steps").filter(tenant=get_tenant(self.request.user))
+        enabled = self.request.query_params.get("enabled")
+        return qs.filter(enabled=enabled.lower() == "true") if enabled else qs
 
     def perform_create(self, serializer):
+        if self.request.user.tenant_id is None:
+            raise ValidationError({"tenant": "Use an organization account."})
         serializer.save(tenant=get_tenant(self.request.user))
 
 
@@ -307,13 +343,16 @@ class PlaybookStepListCreateView(generics.ListCreateAPIView):
             playbook__tenant=get_tenant(self.request.user),
         )
 
+    @transaction.atomic
     def perform_create(self, serializer):
-        try:
-            playbook = Playbook.objects.get(pk=self.kwargs["pk"], tenant=get_tenant(self.request.user))
-        except Playbook.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-        serializer.save(playbook=playbook)
+        playbook = generics.get_object_or_404(
+            Playbook.objects.select_for_update(), pk=self.kwargs["pk"], tenant=self.request.user.tenant,
+        )
+        position = serializer.validated_data["position"]
+        if playbook.steps.filter(position=position).exists():
+            raise ValidationError({"position": "This position is already in use."})
+        step = serializer.save(playbook=playbook)
+        audit(self.request, playbook, "playbook.step_created", {"step_id": step.pk, "position": position})
 
 
 class PlaybookStepDetailView(generics.UpdateAPIView):
@@ -330,57 +369,54 @@ class PlaybookStepDetailView(generics.UpdateAPIView):
         return generics.get_object_or_404(self.get_queryset(), pk=self.kwargs["sid"])
 
 
+    @transaction.atomic
+    def perform_update(self, serializer):
+        step = serializer.instance
+        playbook = Playbook.objects.select_for_update().get(pk=step.playbook_id)
+        position = serializer.validated_data.get("position", step.position)
+        if playbook.steps.filter(position=position).exclude(pk=step.pk).exists():
+            raise ValidationError({"position": "This position is already in use."})
+        serializer.save()
+        audit(self.request, playbook, "playbook.step_updated", {"step_id": step.pk, "position": position})
+
+
 # ---------------------------------------------------------------------------
 # Apply playbook to incident
 # ---------------------------------------------------------------------------
 
 class IncidentApplyPlaybookView(APIView):
-    permission_classes = [IsSOCLead]
+    permission_classes = [IsIncidentResponder]
 
+    @extend_schema(request=PlaybookApplicationSerializer, responses=OpenApiTypes.OBJECT)
+    @transaction.atomic
     def post(self, request, pk):
-        try:
-            incident = Incident.objects.get(pk=pk, tenant=get_tenant(request.user))
-        except Incident.DoesNotExist:
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        playbook_id = request.data.get("playbook_id")
-        if not playbook_id:
-            return Response({"detail": "playbook_id is required."}, status=status.HTTP_400_BAD_REQUEST)
-
-        try:
-            playbook = Playbook.objects.prefetch_related("steps").get(
-                pk=playbook_id, tenant=get_tenant(request.user), enabled=True
+        if request.user.role != "soc_lead":
+            raise PermissionDenied("Only the SOC Lead can apply playbooks.")
+        incident = generics.get_object_or_404(Incident.objects.select_for_update(), pk=pk, tenant=request.user.tenant)
+        require_open(incident)
+        serializer = PlaybookApplicationSerializer(data=request.data, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        playbook = generics.get_object_or_404(Playbook.objects.select_for_update(), pk=data["playbook_id"], tenant=incident.tenant, enabled=True)
+        steps = list(playbook.steps.all())
+        if not steps:
+            raise ValidationError({"playbook_id": "Add at least one step before applying the playbook."})
+        if incident.timeline_entries.filter(entry_type="playbook_applied", metadata__playbook_id=playbook.pk).exists():
+            return Response({"actions_created": 0, "action_ids": [], "detail": "Playbook already applied."})
+        ids = []
+        for step in steps:
+            action, created = Action.objects.get_or_create(
+                incident=incident, playbook_step=step,
+                defaults={"tenant": incident.tenant, "title": step.title, "instructions": step.instructions,
+                          "required": step.required, "assignee": data.get("assignee")},
             )
-        except Playbook.DoesNotExist:
-            return Response({"detail": "Playbook not found or disabled."}, status=status.HTTP_404_NOT_FOUND)
-
-        actions_created = []
-        for step in playbook.steps.all():
-            action = Action.objects.create(
-                tenant=incident.tenant,
-                incident=incident,
-                playbook_step=step,
-                title=step.title,
-                instructions=step.instructions,
-                required=step.required,
-                status="pending",
-            )
-            actions_created.append(action.id)
-
-        TimelineEntry.objects.create(
-            incident=incident,
-            tenant=incident.tenant,
-            actor=request.user,
-            entry_type="playbook_applied",
-            message=f"Playbook '{playbook.name}' applied — {len(actions_created)} task(s) created.",
-            metadata={"playbook_id": playbook.id, "actions": actions_created},
-        )
-
-        return Response({
-            "detail": f"Playbook '{playbook.name}' applied.",
-            "actions_created": len(actions_created),
-            "action_ids": actions_created,
-        })
+            if created:
+                ids.append(action.pk)
+        TimelineEntry.objects.create(incident=incident, tenant=incident.tenant, actor=request.user,
+            entry_type="playbook_applied", message=f"Applied {playbook.name}.",
+            metadata={"playbook_id": playbook.pk, "actions": ids})
+        audit(request, incident, "incident.playbook_applied", {"playbook_id": playbook.pk, "actions": ids})
+        return Response({"actions_created": len(ids), "action_ids": ids})
 
 
 # ---------------------------------------------------------------------------
@@ -388,7 +424,7 @@ class IncidentApplyPlaybookView(APIView):
 # ---------------------------------------------------------------------------
 
 class IncidentActionListCreateView(generics.ListCreateAPIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [IsIncidentResponder]
     serializer_class = ActionSerializer
 
     def get_queryset(self):
@@ -397,46 +433,56 @@ class IncidentActionListCreateView(generics.ListCreateAPIView):
             tenant=get_tenant(self.request.user),
         )
 
+    @transaction.atomic
     def perform_create(self, serializer):
-        try:
-            incident = Incident.objects.get(pk=self.kwargs["pk"], tenant=get_tenant(self.request.user))
-        except Incident.DoesNotExist:
-            from rest_framework.exceptions import NotFound
-            raise NotFound()
-        serializer.save(tenant=incident.tenant, incident=incident)
+        if self.request.user.role != "soc_lead":
+            raise PermissionDenied("Only the SOC Lead can create tasks.")
+        incident = generics.get_object_or_404(Incident.objects.select_for_update(), pk=self.kwargs["pk"], tenant=self.request.user.tenant)
+        require_open(incident)
+        action = serializer.save(tenant=incident.tenant, incident=incident)
+        audit(self.request, incident, "incident.task_created", {"action_id": action.pk})
 
 
 class ActionTransitionView(APIView):
-    permission_classes = [IsSOCAnalyst]
+    permission_classes = [IsIncidentResponder]
 
+    @extend_schema(request=ActionTransitionSerializer, responses=ActionSerializer)
+    @transaction.atomic
     def post(self, request, pk, aid):
-        try:
-            incident = Incident.objects.get(pk=pk, tenant=get_tenant(request.user))
-            action = Action.objects.get(pk=aid, incident=incident)
-        except (Incident.DoesNotExist, Action.DoesNotExist):
-            return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
-
-        serializer = ActionTransitionSerializer(data=request.data)
+        incident = generics.get_object_or_404(Incident.objects.select_for_update(), pk=pk, tenant=request.user.tenant)
+        require_open(incident)
+        action = generics.get_object_or_404(Action, pk=aid, incident=incident, tenant=incident.tenant)
+        lead = request.user.role == "soc_lead"
+        serializer = ActionTransitionSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-
-        new_status = serializer.validated_data["new_status"]
-        action.status = new_status
-        if serializer.validated_data.get("completion_notes"):
-            action.completion_notes = serializer.validated_data["completion_notes"]
-        if new_status == "completed":
-            action.completed_at = timezone.now()
-            action.completed_by = request.user
+        data = serializer.validated_data
+        if "assignee" in data:
+            if not lead:
+                raise PermissionDenied("Only the SOC Lead can assign tasks.")
+            if action.status not in ("pending", "in_progress"):
+                raise ValidationError({"assignee": "Only open tasks can be reassigned."})
+            action.assignee = data["assignee"]
+        new_status = data.get("new_status")
+        if new_status:
+            if not lead and (request.user.role != "soc_analyst" or action.assignee_id not in (None, request.user.pk)):
+                raise PermissionDenied("Only the assignee or SOC Lead can update this task.")
+            allowed = {"pending": {"in_progress", "completed", "skipped"}, "in_progress": {"completed", "skipped"}}
+            if new_status not in allowed.get(action.status, set()):
+                raise ValidationError({"status": "This task transition is not available."})
+            if new_status == "skipped" and (action.required or not lead):
+                raise ValidationError({"status": "Only the SOC Lead can skip optional tasks."})
+            if new_status in ("completed", "skipped") and not data.get("completion_notes"):
+                raise ValidationError({"completion_notes": "Enter a completion note or skip reason."})
+            action.status = new_status
+            if new_status in ("completed", "skipped"):
+                action.completed_at = timezone.now()
+                action.completed_by = request.user
+                action.completion_notes = data["completion_notes"]
         action.save()
-
-        TimelineEntry.objects.create(
-            incident=incident,
-            tenant=incident.tenant,
-            actor=request.user,
-            entry_type="task_updated",
-            message=f"Task '{action.title}' moved to '{new_status}'.",
-            metadata={"action_id": action.id, "new_status": new_status},
-        )
-
+        changes = {"action_id": action.pk, "status": action.status, "assignee_id": action.assignee_id}
+        TimelineEntry.objects.create(incident=incident, tenant=incident.tenant, actor=request.user,
+            entry_type="task_updated", message=f"Task '{action.title}' updated.", metadata=changes)
+        audit(request, incident, "incident.task_updated", changes)
         return Response(ActionSerializer(action).data)
 
 
@@ -460,51 +506,17 @@ class ReportListCreateView(generics.ListCreateAPIView):
         )
 
     def create(self, request, *args, **kwargs):
-        from apps.monitoring.models import Event, Alert
         serializer = ReportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         tenant = get_tenant(request.user)
+        if tenant is None:
+            raise ValidationError({"tenant": "Use an organization account."})
 
         period_start = data["period_start"]
         period_end = data["period_end"]
 
-        events_qs = Event.objects.filter(
-            tenant=tenant,
-            received_at__date__gte=period_start,
-            received_at__date__lte=period_end,
-        )
-        alerts_qs = Alert.objects.filter(
-            tenant=tenant,
-            created_at__date__gte=period_start,
-            created_at__date__lte=period_end,
-        )
-        incidents_qs = Incident.objects.filter(
-            tenant=tenant,
-            created_at__date__gte=period_start,
-            created_at__date__lte=period_end,
-        )
-
-        # Event counts
-        event_counts = {s: events_qs.filter(severity=s).count() for s in ["info", "low", "medium", "high", "critical"]}
-
-        # Alert severity breakdown
-        alert_severity = {s: alerts_qs.filter(severity=s).count() for s in ["low", "medium", "high", "critical"]}
-
-        # Incident outcomes
-        incident_outcomes = {s: incidents_qs.filter(status=s).count() for s in ["open", "investigating", "containment", "resolved", "closed"]}
-
-        # Open workload
-        open_alerts = Alert.objects.filter(tenant=tenant).exclude(status__in=["dismissed", "resolved"]).count()
-        open_incidents = Incident.objects.filter(tenant=tenant).exclude(status__in=["resolved", "closed"]).count()
-
-        metrics = {
-            "period": {"start": str(period_start), "end": str(period_end)},
-            "events": {"total": events_qs.count(), "by_severity": event_counts},
-            "alerts": {"total": alerts_qs.count(), "by_severity": alert_severity},
-            "incidents": {"total": incidents_qs.count(), "by_status": incident_outcomes},
-            "open_workload": {"alerts": open_alerts, "incidents": open_incidents},
-        }
+        metrics = report_metrics(tenant, period_start, period_end)
 
         report = Report.objects.create(
             tenant=tenant,
@@ -514,6 +526,7 @@ class ReportListCreateView(generics.ListCreateAPIView):
             metrics=metrics,
             generated_by=request.user,
         )
+        audit(request, report, "report.generated", {})
         return Response(ReportSerializer(report).data, status=status.HTTP_201_CREATED)
 
 

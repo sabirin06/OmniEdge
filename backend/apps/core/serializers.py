@@ -56,9 +56,9 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             "id", "email", "full_name", "role", "tenant", "tenant_detail",
             "is_active", "created_at", "updated_at", "password",
-            "managed_role", "managed_role_detail",
+            "managed_role", "managed_role_detail", "theme", "dashboard_refresh_seconds",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "theme", "dashboard_refresh_seconds"]
         extra_kwargs = {
             "tenant": {"write_only": True, "required": False, "allow_null": True},
             "role": {"required": False},
@@ -120,6 +120,13 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
+class UserDirectorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "full_name", "role", "is_active"]
+        read_only_fields = fields
+
+
 class UserMeSerializer(serializers.ModelSerializer):
     managed_role_detail = ManagedRoleSerializer(source="managed_role", read_only=True)
     tenant_detail = TenantMinimalSerializer(source="tenant", read_only=True)
@@ -128,9 +135,16 @@ class UserMeSerializer(serializers.ModelSerializer):
         model = User
         fields = [
             "id", "email", "full_name", "role", "tenant", "tenant_detail",
-            "is_active", "created_at", "managed_role_detail",
+            "is_active", "created_at", "managed_role_detail", "theme", "dashboard_refresh_seconds",
         ]
-        read_only_fields = ["id", "email", "role", "tenant", "created_at"]
+        read_only_fields = ["id", "email", "role", "tenant", "is_active", "created_at"]
+
+    def update(self, instance, validated_data):
+        if validated_data:
+            for field, value in validated_data.items():
+                setattr(instance, field, value)
+            instance.save(update_fields=[*validated_data, "updated_at"])
+        return instance
 
 
 class LoginSerializer(serializers.Serializer):

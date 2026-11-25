@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { requestError } from '../api/errors';
+import { isAxiosError } from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
 import logo from '../assets/omniteckno-logo.png';
@@ -20,8 +22,11 @@ export function Login() {
     try {
       await login(email, password);
       navigate('/dashboard');
-    } catch (err: any) {
-      setError(err?.response?.data?.error || err?.response?.data?.detail || 'Invalid email or password.');
+    } catch (err) {
+      const status = isAxiosError(err) ? err.response?.status : undefined;
+      if (status === 401) setError('Check your email address and password, then try again.');
+      else if (status === 403) setError('The sign-in security check failed. Reload this page and try again.');
+      else setError(requestError(err, 'Could not sign you in.'));
     } finally {
       setLoading(false);
     }
@@ -33,40 +38,40 @@ export function Login() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      background: 'radial-gradient(ellipse at top, #161B22 0%, #0D1117 100%)',
+      background: 'radial-gradient(ellipse at top, var(--color-surface) 0%, var(--color-canvas) 100%)',
       padding: '24px',
       color: 'var(--color-text-primary)'
     }}>
       <div style={{
         width: '100%',
         maxWidth: '460px',
-        background: 'var(--color-surface, #161B22)',
-        border: '1px solid var(--color-border, #30363D)',
+        background: 'var(--color-surface)',
+        border: '1px solid var(--color-border)',
         borderRadius: '12px',
         padding: '36px',
-        boxShadow: '0 12px 36px rgba(0,0,0,0.5)'
+        boxShadow: 'var(--shadow-lg)'
       }}>
         {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
-          <img src={logo} alt="OmniTeckno" style={{ width: 160, maxWidth: '100%', marginBottom: 14 }} />
+          <img src={logo} alt="OmniTeckno" className="login-brand-logo" style={{ width: 160, maxWidth: '100%', marginBottom: 14 }} />
           <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 6px 0', letterSpacing: '-0.5px' }}>
             OmniEdge
           </h1>
-          <p style={{ margin: 0, color: 'var(--color-text-secondary, #8B949E)', fontSize: '13px' }}>
+          <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
             Security Operations & Incident Response Management
           </p>
         </div>
 
         {error && (
-          <div style={{
+          <div role="alert" style={{
             display: 'flex',
             alignItems: 'center',
             gap: '8px',
             padding: '12px',
-            background: 'rgba(255, 123, 114, 0.1)',
-            border: '1px solid var(--color-critical, #FF7B72)',
+            background: 'color-mix(in srgb, var(--color-danger) 10%, transparent)',
+            border: '1px solid var(--color-critical, var(--color-danger))',
             borderRadius: '6px',
-            color: '#FF7B72',
+            color: 'var(--color-danger)',
             fontSize: '13px',
             marginBottom: '20px'
           }}>
@@ -77,12 +82,14 @@ export function Login() {
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary, #8B949E)' }}>
+            <label htmlFor="login-email" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Email Address
             </label>
             <div style={{ position: 'relative' }}>
               <Mail size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
               <input
+                id="login-email"
+                autoComplete="username"
                 type="email"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
@@ -92,7 +99,7 @@ export function Login() {
                   width: '100%',
                   padding: '10px 12px 10px 36px',
                   background: 'var(--color-canvas)',
-                  border: '1px solid var(--color-border, #30363D)',
+                  border: '1px solid var(--color-border)',
                   borderRadius: '6px',
                   color: 'var(--color-text-primary)',
                   fontSize: '14px',
@@ -103,12 +110,14 @@ export function Login() {
           </div>
 
           <div style={{ marginBottom: '24px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary, #8B949E)' }}>
+            <label htmlFor="login-password" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Password
             </label>
             <div style={{ position: 'relative' }}>
               <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
               <input
+                id="login-password"
+                autoComplete="current-password"
                 type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
@@ -118,7 +127,7 @@ export function Login() {
                   width: '100%',
                   padding: '10px 12px 10px 36px',
                   background: 'var(--color-canvas)',
-                  border: '1px solid var(--color-border, #30363D)',
+                  border: '1px solid var(--color-border)',
                   borderRadius: '6px',
                   color: 'var(--color-text-primary)',
                   fontSize: '14px',
@@ -128,23 +137,8 @@ export function Login() {
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            style={{
-              width: '100%',
-              padding: '11px',
-              background: 'var(--color-brand-button)',
-              border: 'none',
-              borderRadius: '6px',
-              color: '#FFFFFF',
-              fontWeight: '600',
-              fontSize: '14px',
-              cursor: loading ? 'not-allowed' : 'pointer',
-              transition: 'background 0.2s',
-              opacity: loading ? 0.7 : 1
-            }}
-          >
+          <button type="submit" className="btn btn-primary" disabled={loading}
+            style={{ width: '100%', justifyContent: 'center', padding: '11px' }}>
             {loading ? 'Authenticating...' : 'Sign In to Security Center'}
           </button>
         </form>

@@ -16,6 +16,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from apps.core.models import Tenant, User
 from apps.core.utils import generate_secret_key
+from apps.incidents.reporting import report_metrics
 from apps.monitoring.models import Asset, LogSource, Event, Rule, Alert
 from apps.incidents.models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
 
@@ -388,25 +389,17 @@ class Command(BaseCommand):
         )
         self.stdout.write("  [+] Incidents, Timeline, Tasks, Evidence ready.")
 
-        # 9. Reports
+        # 9. Report snapshot calculated from demo records
+        period_end = timezone.localdate()
+        period_start = period_end - timedelta(days=30)
         Report.objects.get_or_create(
             tenant=horizon,
-            title="Monthly SOC Operations & Threat Landscape Report - November 2026",
+            title="Demo SOC Operations Snapshot",
             defaults={
-                "period_start": (timezone.now() - timedelta(days=30)).date(),
-                "period_end": timezone.now().date(),
+                "period_start": period_start,
+                "period_end": period_end,
                 "generated_by": h_lead,
-                "metrics": {
-                    "total_events": 142850,
-                    "total_alerts": 42,
-                    "alerts_by_severity": {"critical": 4, "high": 12, "medium": 18, "low": 8},
-                    "incidents_count": 3,
-                    "mean_time_to_detect_minutes": 8.5,
-                    "mean_time_to_respond_minutes": 24.0,
-                    "active_assets_monitored": 5,
-                    "open_incidents": 1,
-                    "closed_incidents": 2,
-                },
+                "metrics": lambda: report_metrics(horizon, period_start, period_end),
             },
         )
         self.stdout.write("  [+] Security Reports ready.")

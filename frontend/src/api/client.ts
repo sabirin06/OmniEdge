@@ -9,10 +9,10 @@ const api = axios.create({
 // Auto-attach CSRF token from cookie
 api.interceptors.request.use(async (config) => {
   const method = config.method?.toLowerCase() ?? '';
-  if (['post', 'put', 'patch', 'delete'].includes(method)) {
+  if (['post', 'put', 'patch', 'delete'].includes(method) && !config.headers.has('X-CSRFToken')) {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
     if (cookie) {
-      config.headers['X-CSRFToken'] = cookie.split('=')[1];
+      config.headers.set('X-CSRFToken', cookie.trim().slice('csrftoken='.length));
     }
   }
   return config;

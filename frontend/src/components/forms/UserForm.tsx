@@ -1,3 +1,4 @@
+import { requestError, requestFields } from '../../api/errors';
 import { useEffect, useState } from 'react';
 import { FormDialog } from '../ui/FormDialog';
 import { useToast } from '../ui/Toast';
@@ -25,6 +26,7 @@ export function UserForm({ user, onClose, onSaved }: Props) {
   const [active, setActive] = useState(user?.is_active ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [fields, setFields] = useState<Partial<Record<'full_name' | 'email' | 'role' | 'managed_role' | 'tenant' | 'password', string>>>({});
 
   useEffect(() => {
     if (!platform) return;
@@ -50,13 +52,15 @@ export function UserForm({ user, onClose, onSaved }: Props) {
   const save = async () => {
     if (saving) return;
     const builtInRole = builtInRoles.find(([key]) => key === selection);
-    if (!fullName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      setError('Enter a full name and valid email address.');
-      return;
-    }
-    if (!managedRole && !builtInRole) { setError('Choose a role.'); return; }
-    if (platform && !globalRole && !tenant) { setError('Choose an organization.'); return; }
-    if (!user && !password) { setError('Enter a temporary password.'); return; }
+    setError('');
+    const issues: typeof fields = {};
+    if (!fullName.trim()) issues.full_name = 'Enter the user?s full name.';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) issues.email = 'Enter a valid email address.';
+    if (!managedRole && !builtInRole) issues.role = 'Choose a role.';
+    if (platform && !globalRole && !tenant) issues.tenant = 'Choose an organization.';
+    if (!user && !password) issues.password = 'Enter a temporary password.';
+    setFields(issues);
+    if (Object.keys(issues).length) return;
 
     setSaving(true);
     setError('');
@@ -75,8 +79,9 @@ export function UserForm({ user, onClose, onSaved }: Props) {
       onSaved();
       onClose();
     } catch (err: unknown) {
-      const errors = (err as { response?: { data?: { errors?: Record<string, string | string[]> } } }).response?.data?.errors;
-      setError(errors ? Object.values(errors).flat().join(' ') : 'Could not save the user.');
+      const next = requestFields(err, ['full_name', 'email', 'role', 'managed_role', 'tenant', 'password']);
+      setFields(next);
+      if (!Object.keys(next).length) setError(requestError(err, 'Could not save the user.'));
     } finally {
       setSaving(false);
     }
@@ -87,36 +92,41 @@ export function UserForm({ user, onClose, onSaved }: Props) {
       onClose={() => { if (!saving) onClose(); }} onSubmit={save} submitLoading={saving}>
       <div className="form-group">
         <label htmlFor="user-name">Full name</label>
-        <input id="user-name" value={fullName} onChange={e => setFullName(e.target.value)} />
+        <input id="user-name" aria-invalid={!!fields.full_name} aria-describedby={fields.full_name ? "user-name-error" : undefined} value={fullName} onChange={e => { setFullName(e.target.value); setFields(current => ({ ...current, full_name: undefined })); }} />
+        {fields.full_name && <p className="form-error" role="alert" id="user-name-error">{fields.full_name}</p>}
       </div>
       <div className="form-group">
         <label htmlFor="user-email">Email</label>
-        <input id="user-email" type="email" value={email} onChange={e => setEmail(e.target.value)} />
+        <input id="user-email" aria-invalid={!!fields.email} aria-describedby={fields.email ? "user-email-error" : undefined} type="email" value={email} onChange={e => { setEmail(e.target.value); setFields(current => ({ ...current, email: undefined })); }} />
+        {fields.email && <p className="form-error" role="alert" id="user-email-error">{fields.email}</p>}
       </div>
       <div className="form-group">
         <label htmlFor="user-role">Role</label>
-        <select id="user-role" value={selection} onChange={e => setSelection(e.target.value)}>
+        <select id="user-role" aria-invalid={!!(fields.role || fields.managed_role)} aria-describedby={(fields.role || fields.managed_role) ? "user-role-error" : undefined} value={selection} onChange={e => { setSelection(e.target.value); setFields(current => ({ ...current, role: undefined, managed_role: undefined })); }}>
           <option value="">Choose a role</option>
           {builtInRoles.filter(([key]) => platform || key !== 'platform_admin')
             .map(([key, label]) => <option key={key} value={key}>{label}</option>)}
           {roles.data?.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
         </select>
+        {(fields.role || fields.managed_role) && <p className="form-error" role="alert" id="user-role-error">{(fields.role || fields.managed_role)}</p>}
         {roles.loading && <p role="status">Loading custom roles...</p>}
         {roles.error && <p role="alert">Could not load custom roles. <button type="button" className="btn btn-ghost" onClick={roles.refresh}>Retry</button></p>}
       </div>
       {platform && !globalRole && (
         <div className="form-group">
           <label htmlFor="user-tenant">Organization</label>
-          <select id="user-tenant" value={tenant} onChange={e => setTenant(e.target.value)}>
+          <select id="user-tenant" aria-invalid={!!fields.tenant} aria-describedby={fields.tenant ? "user-tenant-error" : undefined} value={tenant} onChange={e => { setTenant(e.target.value); setFields(current => ({ ...current, tenant: undefined })); }}>
             <option value="">Choose an organization</option>
             {tenants.map(option => <option key={option.id} value={option.id}>{option.name}</option>)}
           </select>
+        {fields.tenant && <p className="form-error" role="alert" id="user-tenant-error">{fields.tenant}</p>}
           {tenantError && <p role="alert">{tenantError}</p>}
         </div>
       )}
       <div className="form-group">
         <label htmlFor="user-password">{user ? 'New password (optional)' : 'Temporary password'}</label>
-        <input id="user-password" type="password" autoComplete="new-password" value={password} onChange={e => setPassword(e.target.value)} />
+        <input id="user-password" aria-invalid={!!fields.password} aria-describedby={fields.password ? "user-password-error" : undefined} type="password" autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setFields(current => ({ ...current, password: undefined })); }} />
+        {fields.password && <p className="form-error" role="alert" id="user-password-error">{fields.password}</p>}
       </div>
       {user && <label><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /> Active</label>}
       {error && <p className="form-error" role="alert">{error}</p>}

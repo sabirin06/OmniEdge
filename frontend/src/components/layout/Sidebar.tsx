@@ -1,13 +1,14 @@
+import { Shield as BrandShield } from 'lucide-react';
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Bell, FileText, Zap, Shield,
   Building2, Users, Monitor, Radio, Gamepad2,
-  BookOpen, BarChart3, ClipboardList, ChevronLeft, ChevronRight, LogOut,
+  BookOpen, BarChart3, ClipboardList, ChevronLeft, ChevronRight, LogOut, Settings,
 } from 'lucide-react';
 import logo from '../../assets/omniteckno-logo.png';
 import { useAuth } from '../../hooks/useAuth';
-import { can, hasRole } from '../../utils/permissions';
+import { canAccessPage } from '../../utils/permissions';
 import { roleLabels } from '../../utils/formatters';
 import type { UserRole } from '../../types';
 
@@ -15,34 +16,28 @@ interface NavItemDef {
   to: string;
   icon: React.ReactNode;
   label: string;
-  permission?: string;
-  roles?: UserRole[];
 }
 
 const NAV_PRIMARY: NavItemDef[] = [
   { to: '/dashboard',   icon: <LayoutDashboard size={18} />, label: 'SOC Overview' },
-  { to: '/alerts',      icon: <Bell size={18} />,            label: 'Alert Queue',      roles: ['customer_admin','lead','analyst','soc_lead','soc_analyst'] },
-  { to: '/incidents',   icon: <FileText size={18} />,        label: 'Incidents',        roles: ['customer_admin','lead','analyst','soc_lead','soc_analyst'] },
-  { to: '/events',      icon: <Zap size={18} />,             label: 'Events',           roles: ['customer_admin','lead','analyst','soc_lead','soc_analyst'] },
-  { to: '/rules',       icon: <Shield size={18} />,          label: 'Detection Rules',  roles: ['lead','soc_lead'] },
+  { to: '/alerts',      icon: <Bell size={18} />,            label: 'Alert Queue'  },
+  { to: '/incidents',   icon: <FileText size={18} />,        label: 'Incidents'  },
+  { to: '/events',      icon: <Zap size={18} />,             label: 'Events'  },
+  { to: '/rules',       icon: <Shield size={18} />,          label: 'Detection Rules'  },
 ];
 
 const NAV_MANAGE: NavItemDef[] = [
-  { to: '/tenants',     icon: <Building2 size={18} />,  label: 'Tenants',       roles: ['platform_admin'] },
-  { to: '/roles',       icon: <Shield size={18} />,     label: 'Roles',         roles: ['platform_admin'] },
-  { to: '/users',       icon: <Users size={18} />,      label: 'Users',         roles: ['customer_admin','platform_admin'] },
-  { to: '/assets',      icon: <Monitor size={18} />,    label: 'Assets',        roles: ['customer_admin','lead','analyst','soc_lead','soc_analyst'] },
-  { to: '/log-sources', icon: <Radio size={18} />,      label: 'Log Sources',   roles: ['customer_admin','lead','soc_lead'] },
-  { to: '/simulator',   icon: <Gamepad2 size={18} />,   label: 'Simulator',     roles: ['customer_admin'] },
-  { to: '/playbooks',   icon: <BookOpen size={18} />,   label: 'Playbooks',     roles: ['lead','soc_lead'] },
-  { to: '/reports',     icon: <BarChart3 size={18} />,  label: 'Reports',       roles: ['customer_admin','lead','analyst','soc_lead','soc_analyst'] },
-  { to: '/audit',       icon: <ClipboardList size={18} />, label: 'Audit Log',  roles: ['lead','soc_lead','customer_admin'] },
+  { to: '/tenants',     icon: <Building2 size={18} />,  label: 'Tenants'  },
+  { to: '/roles',       icon: <Shield size={18} />,     label: 'Roles'  },
+  { to: '/users',       icon: <Users size={18} />,      label: 'Users'  },
+  { to: '/assets',      icon: <Monitor size={18} />,    label: 'Assets'  },
+  { to: '/log-sources', icon: <Radio size={18} />,      label: 'Log Sources'  },
+  { to: '/simulator',   icon: <Gamepad2 size={18} />,   label: 'Simulator'  },
+  { to: '/playbooks',   icon: <BookOpen size={18} />,   label: 'Playbooks'  },
+  { to: '/reports',     icon: <BarChart3 size={18} />,  label: 'Reports'  },
+  { to: '/audit',       icon: <ClipboardList size={18} />, label: 'Audit Log'  },
+  { to: '/settings', icon: <Settings size={18} />, label: 'Settings' },
 ];
-
-function navVisible(item: NavItemDef, role: UserRole | undefined): boolean {
-  if (!item.roles) return true;
-  return item.roles.includes(role as UserRole);
-}
 
 export function Sidebar() {
   const { user, logout } = useAuth();
@@ -57,7 +52,6 @@ export function Sidebar() {
       {/* Logo */}
       <div className="sidebar-logo">
         <img src={logo} alt="OmniTeckno" className="sidebar-brand-logo" />
-        <span className="sidebar-logo-text">OmniEdge</span>
         <button
           className="btn btn-ghost btn-icon"
           style={{ marginLeft: 'auto' }}
@@ -69,30 +63,33 @@ export function Sidebar() {
       </div>
 
       {/* Nav */}
+      <div className="sidebar-product-name"><BrandShield size={24} aria-hidden="true" /><span>OmniEdge</span></div>
       <nav className="sidebar-nav">
-        {NAV_PRIMARY.filter(item => navVisible(item, role)).map(item => (
+        {NAV_PRIMARY.filter(item => canAccessPage(role, item.to)).map(item => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            title={collapsed ? item.label : undefined}
+            aria-label={item.to === '/dashboard' && role === 'platform_admin' ? 'Platform Overview' : item.label}
+            title={item.label}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span>{item.to === '/dashboard' && role === 'platform_admin' ? 'Platform Overview' : item.label}</span>
           </NavLink>
         ))}
 
         <div className="sidebar-section-label">Manage</div>
 
-        {NAV_MANAGE.filter(item => navVisible(item, role)).map(item => (
+        {NAV_MANAGE.filter(item => canAccessPage(role, item.to)).map(item => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-            title={collapsed ? item.label : undefined}
+            aria-label={item.to === '/dashboard' && role === 'platform_admin' ? 'Platform Overview' : item.label}
+            title={item.label}
           >
             {item.icon}
-            <span>{item.label}</span>
+            <span>{item.to === '/dashboard' && role === 'platform_admin' ? 'Platform Overview' : item.label}</span>
           </NavLink>
         ))}
       </nav>

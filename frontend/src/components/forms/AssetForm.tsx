@@ -1,3 +1,4 @@
+import { requestError } from '../../api/errors';
 import React, { useState, useEffect } from 'react';
 import { FormDialog } from '../ui/FormDialog';
 import { useToast } from '../ui/Toast';
@@ -53,7 +54,7 @@ export function AssetForm({ open, asset, onClose, onSaved }: Props) {
       else await assetsApi.create(payload);
       toast('success', asset ? 'Asset updated' : 'Asset created');
       onSaved(); onClose();
-    } catch { toast('error', 'Failed to save asset'); }
+    } catch (error) { toast('error', requestError(error, 'Could not save the asset.')); }
     finally { setLoading(false); }
   };
 

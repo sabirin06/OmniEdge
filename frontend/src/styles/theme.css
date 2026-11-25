@@ -4,11 +4,11 @@
   --header-height: 64px;
 
   /* Canvas / Surface */
-  --color-canvas: #060B14;
-  --color-surface: #0B1322;
-  --color-surface-raised: #0E1A30;
-  --color-border: #1A2844;
-  --color-border-subtle: #121E36;
+  --color-canvas: #050e18;
+  --color-surface: #071a28;
+  --color-surface-raised: #102b40;
+  --color-border: #22536e;
+  --color-border-subtle: #173448;
 
   /* Text */
   --color-text-primary: #F8FAFC;
@@ -16,7 +16,13 @@
   --color-text-muted: #94A3B8;
 
   /* Brand accent */
-  --color-brand-button: #0047B8;
+  --color-brand-button: #00b9f2;
+  --color-button-ink: #001626;
+  --color-button-outline: #00b9f2;
+  --color-button-outline-ink: #8be5ff;
+  --color-sidebar: #071420;
+  --color-nav-active: #006d95;
+  --color-chart-alerts: #ffc333;
   --color-accent: #00BFFF;
   --color-accent-hover: #38BDF8;
   --color-accent-subtle: rgba(0,191,255,0.13);
@@ -53,4 +59,49 @@
 
   /* Transitions */
   --transition: 150ms ease;
+}
+
+:root {
+  color-scheme: dark;
+  --color-input-border: #62728b;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-canvas: #f3f6fc;
+  --color-surface: #ffffff;
+  --color-surface-raised: #edf3fa;
+  --color-border: #d9e3f4;
+  --color-border-subtle: #e2e9f3;
+  --color-input-border: #74839a;
+  --color-text-primary: #13243d;
+  --color-text-secondary: #465b76;
+  --color-text-muted: #546984;
+  --color-brand-button: #0561ed;
+  --color-button-ink: #fff;
+  --color-button-outline: #0561ed;
+  --color-button-outline-ink: #004bbd;
+  --color-sidebar: #fafbfe;
+  --color-nav-active: #0059de;
+  --color-chart-alerts: #f9b719;
+  --color-accent: #0055bc;
+  --color-accent-hover: #104692;
+  --color-accent-subtle: #e1eeff;
+  --color-critical: #a52339;
+  --color-high: #9d3900;
+  --color-medium: #715008;
+  --color-low: #13643b;
+  --color-info: #155a99;
+  --color-new: var(--color-info);
+  --color-in-review: var(--color-medium);
+  --color-resolved: var(--color-low);
+  --color-dismissed: var(--color-text-secondary);
+  --color-escalated: var(--color-critical);
+  --color-success: var(--color-low);
+  --color-warning: var(--color-medium);
+  --color-danger: var(--color-critical);
+  --color-danger-hover: #7c1225;
+  --shadow-sm: 0 1px 3px rgba(16, 35, 61, .08);
+  --shadow-md: 0 4px 12px rgba(16, 35, 61, .12);
+  --shadow-lg: 0 8px 24px rgba(16, 35, 61, .18);
 }

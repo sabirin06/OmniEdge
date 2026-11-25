@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { CheckCircle, XCircle, AlertTriangle, Info, X } from 'lucide-react';
 
 type ToastType = 'success' | 'error' | 'warning' | 'info';
@@ -18,16 +18,27 @@ const ICONS: Record<ToastType, React.ReactNode> = {
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  let counter = 0;
+  const counter = useRef(0);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
 
-  const toast = useCallback((type: ToastType, message: string) => {
-    const id = ++counter;
-    setToasts(ts => [...ts, { id, type, message }]);
-    setTimeout(() => setToasts(ts => ts.filter(t => t.id !== id)), 4000);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const active = timers.current;
+    return () => { active.forEach(clearTimeout); active.clear(); };
   }, []);
 
-  const dismiss = (id: number) => setToasts(ts => ts.filter(t => t.id !== id));
+  const dismiss = useCallback((id: number) => {
+    clearTimeout(timers.current.get(id));
+    timers.current.delete(id);
+    setToasts(items => items.filter(item => item.id !== id));
+  }, []);
+
+  const toast = useCallback((type: ToastType, message: string) => {
+    const id = ++counter.current;
+    setToasts(items => [...items, { id, type, message }]);
+    if (type === 'success' || type === 'info') {
+      timers.current.set(id, setTimeout(() => dismiss(id), 6500));
+    }
+  }, [dismiss]);
 
   return (
     <ToastContext.Provider value={{ toast }}>
@@ -35,9 +46,11 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       <div className="toast-container">
         {toasts.map(t => (
           <div key={t.id} className={`toast toast-${t.type}`}>
-            {ICONS[t.type]}
-            <span className="toast-message">{t.message}</span>
-            <button className="toast-close" onClick={() => dismiss(t.id)}><X size={14} /></button>
+            <div className="toast-content" role={t.type === 'error' || t.type === 'warning' ? 'alert' : 'status'}>
+              {ICONS[t.type]}
+              <span className="toast-message">{t.message}</span>
+            </div>
+            <button type="button" className="toast-close" aria-label="Dismiss notification" onClick={() => dismiss(t.id)}><X size={14} /></button>
           </div>
         ))}
       </div>

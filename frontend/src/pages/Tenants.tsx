@@ -1,6 +1,6 @@
 import { Pagination } from '../components/ui/Pagination';
 import { useApi } from '../hooks/useApi';
-import { requestError } from '../api/errors';
+import { requestError, requestFields } from '../api/errors';
 import { useToast } from '../components/ui/Toast';
 import React, { useEffect, useState } from 'react';
 import { Building2, Plus, CheckCircle2, XCircle } from 'lucide-react';
@@ -12,6 +12,7 @@ export function Tenants() {
   const toast = useToast();
   const [search, setSearch] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Form states
   const [editing, setEditing] = useState<number | null>(null);
@@ -33,6 +34,7 @@ export function Tenants() {
     setCode(record?.code ?? '');
     setIndustry(record?.industry ?? 'Financial Services');
     setContactEmail(record?.contact_email ?? '');
+    setFieldErrors({});
     setCreateOpen(true);
   };
 
@@ -50,6 +52,7 @@ export function Tenants() {
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFieldErrors({});
     try {
       const payload = {
         name,
@@ -66,7 +69,9 @@ export function Tenants() {
       setContactEmail('');
       await loadTenants();
     } catch (err) {
-      toast('error', requestError(err, 'Failed to onboard tenant.'));
+      const errors = requestFields(err, ['name', 'code', 'industry', 'contact_email']);
+      setFieldErrors(errors);
+      if (!Object.keys(errors).length) toast('error', requestError(err, 'Could not save the organization.'));
     }
   };
 
@@ -104,7 +109,7 @@ export function Tenants() {
         {listing.error && <p role="alert">Could not load records. <button className="btn btn-ghost" onClick={listing.refresh}>Retry</button></p>}
         <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
           <thead>
-            <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid #30363D', color: 'var(--color-text-secondary)' }}>
+            <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
               <th style={{ padding: '12px 16px' }}>Tenant Code</th>
               <th style={{ padding: '12px 16px' }}>Organization Name</th>
               <th style={{ padding: '12px 16px' }}>Industry Sector</th>
@@ -117,7 +122,7 @@ export function Tenants() {
           <tbody>
             {tenants.length > 0 ? (
               tenants.map(t => (
-                <tr key={t.id} style={{ borderBottom: '1px solid #21262D' }}>
+                <tr key={t.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                   <td style={{ padding: '12px 16px', fontWeight: '700', color: 'var(--color-accent-hover)', fontFamily: 'monospace' }}>
                     {t.code || t.slug}
                   </td>
@@ -136,8 +141,8 @@ export function Tenants() {
                   <td style={{ padding: '12px 16px' }}>
                     <span style={{
                       padding: '2px 8px', borderRadius: '12px', fontSize: '11px', fontWeight: '600',
-                      background: t.status === 'active' || t.is_active ? 'rgba(63, 185, 80, 0.15)' : 'rgba(255, 123, 114, 0.15)',
-                      color: t.status === 'active' || t.is_active ? '#3FB950' : '#FF7B72'
+                      background: t.status === 'active' || t.is_active ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--color-danger) 15%, transparent)',
+                      color: t.status === 'active' || t.is_active ? 'var(--color-success)' : 'var(--color-danger)'
                     }}>
                       {t.status === 'active' || t.is_active ? 'Active' : 'Suspended'}
                     </span>
@@ -171,58 +176,62 @@ export function Tenants() {
       >
         <form onSubmit={handleCreate}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="organization-name" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Organization Name
             </label>
-            <input
+            <input id="organization-name" aria-invalid={!!fieldErrors.name} aria-describedby={fieldErrors.name ? "organization-name-error" : undefined}
               type="text"
               required
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="e.g. Apex Global Bank"
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {fieldErrors.name && <p className="form-error" id="organization-name-error" role="alert">{fieldErrors.name}</p>}
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="organization-code" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Tenant Unique Code
             </label>
-            <input
+            <input id="organization-code" aria-invalid={!!fieldErrors.code} aria-describedby={fieldErrors.code ? "organization-code-error" : undefined}
               type="text"
               required
               value={code}
               onChange={e => setCode(e.target.value.toUpperCase())}
               placeholder="APEX"
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {fieldErrors.code && <p className="form-error" id="organization-code-error" role="alert">{fieldErrors.code}</p>}
           </div>
 
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="organization-industry" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Industry Sector
             </label>
-            <input
+            <input id="organization-industry" aria-invalid={!!fieldErrors.industry} aria-describedby={fieldErrors.industry ? "organization-industry-error" : undefined}
               type="text"
               value={industry}
               onChange={e => setIndustry(e.target.value)}
               placeholder="Financial Services, Healthcare, Telecommunications"
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {fieldErrors.industry && <p className="form-error" id="organization-industry-error" role="alert">{fieldErrors.industry}</p>}
           </div>
 
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="organization-contact-email" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Primary Contact Email
             </label>
-            <input
+            <input id="organization-contact-email" aria-invalid={!!fieldErrors.contact_email} aria-describedby={fieldErrors.contact_email ? "organization-contact-email-error" : undefined}
               type="email"
               required
               value={contactEmail}
               onChange={e => setContactEmail(e.target.value)}
               placeholder="security@apexbank.com"
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {fieldErrors.contact_email && <p className="form-error" id="organization-contact-email-error" role="alert">{fieldErrors.contact_email}</p>}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>

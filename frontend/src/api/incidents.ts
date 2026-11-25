@@ -7,7 +7,7 @@ export interface IncidentPayload {
   severity: string;
   status?: string;
   owner?: number | null;
-  tenant: number;
+  tenant?: number;
   alerts?: number[];
   playbook?: number | null;
 }
@@ -19,9 +19,19 @@ export const incidentsApi = {
   update:  (id: number, data: Partial<IncidentPayload>) => api.patch<Incident>(`/incidents/${id}/`, data),
   delete:  (id: number) => api.delete(`/incidents/${id}/`),
 
+  transition: (id: number, status: string, resolution_summary?: string) =>
+    api.post(`/incidents/${id}/transition/`, { status, resolution_summary }),
+  linkedAlerts: (id: number) => api.get(`/incidents/${id}/linked-alerts/`),
+  applyPlaybook: (id: number, playbook_id: number, assignee?: number) =>
+    api.post(`/incidents/${id}/apply-playbook/`, { playbook_id, assignee }),
+  downloadEvidence: (id: number, evidenceId: number) =>
+    api.get<Blob>(`/incidents/${id}/evidence/${evidenceId}/download/`, { responseType: 'blob' }),
+  assignTask: (id: number, taskId: number, assignee: number | null) =>
+    api.post(`/incidents/${id}/actions/${taskId}/transition/`, { assignee }),
+
   // Timeline
   getTimeline: (id: number) => api.get<TimelineEntry[]>(`/incidents/${id}/timeline/`),
-  addNote:     (id: number, content: string) => api.post<TimelineEntry>(`/incidents/${id}/timeline/`, { content, entry_type: 'note' }),
+  addNote:     (id: number, content: string) => api.post<TimelineEntry>(`/incidents/${id}/timeline/`, { message: content, entry_type: 'note' }),
 
   // Evidence
   getEvidence:    (id: number) => api.get<Evidence[]>(`/incidents/${id}/evidence/`),
@@ -31,9 +41,9 @@ export const incidentsApi = {
     api.delete(`/incidents/${incidentId}/evidence/${evidenceId}/`),
 
   // Tasks
-  getTasks:    (id: number) => api.get<Task[]>(`/incidents/${id}/tasks/`),
+  getTasks:    (id: number) => api.get<Task[]>(`/incidents/${id}/actions/`),
   createTask:  (id: number, data: { title: string; description: string; assigned_to?: number | null; due_date?: string | null }) =>
-    api.post<Task>(`/incidents/${id}/tasks/`, data),
-  updateTask:  (incidentId: number, taskId: number, data: Partial<Task>) =>
-    api.patch<Task>(`/incidents/${incidentId}/tasks/${taskId}/`, data),
+    api.post<Task>(`/incidents/${id}/actions/`, data),
+  updateTask:  (incidentId: number, taskId: number, data: { status: string; completion_notes?: string }) =>
+    api.post<Task>(`/incidents/${incidentId}/actions/${taskId}/transition/`, data),
 };

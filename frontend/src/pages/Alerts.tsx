@@ -1,6 +1,8 @@
+import { useSearchParams } from 'react-router-dom';
+import { IncidentIntakeDialog } from '../components/forms/IncidentIntakeDialog';
 import { Pagination } from '../components/ui/Pagination';
 import { useApi } from '../hooks/useApi';
-import { requestError } from '../api/errors';
+import { requestError, requestFields } from '../api/errors';
 import { useToast } from '../components/ui/Toast';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -17,8 +19,16 @@ import { useAuth } from '../contexts/AuthContext';
 export function Alerts() {
   const toast = useToast();
   const { user } = useAuth();
+  const canRespond = user?.role === "soc_analyst" || user?.role === "soc_lead";
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
+  const [params, setParams] = useSearchParams();
+  const search = params.get('q') ?? '';
+  const setSearch = (value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set('q', value);
+    else next.delete('q');
+    setParams(next, { replace: true });
+  };
   const [statusFilter, setStatusFilter] = useState('');
   const [severityFilter, setSeverityFilter] = useState('');
 
@@ -32,9 +42,12 @@ export function Alerts() {
   const [triageSeverity, setTriageSeverity] = useState('high');
   const [triageNotes, setTriageNotes] = useState('');
   const [dismissReason, setDismissReason] = useState('');
-  const [escalateTitle, setEscalateTitle] = useState('');
+  const [actionFields, setActionFields] = useState<Partial<Record<'severity' | 'notes' | 'reason', string>>>({});
 
   const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
   const listing = useApi(() => alertsApi.list({ page, search, status: statusFilter, severity: severityFilter }), [page, search, statusFilter, severityFilter]);
   const alerts = listing.data?.results ?? [];
   const loading = listing.loading;
@@ -55,9 +68,12 @@ export function Alerts() {
     try {
       await alertsApi.triage(activeAlert.id, { severity: triageSeverity, notes: triageNotes });
       setTriageOpen(false);
+      toast('success', 'Alert review saved.');
       await loadAlerts();
     } catch (err) {
-      toast('error', requestError(err, 'Failed to triage alert.'));
+      const fields = requestFields(err, ['severity', 'notes']);
+      setActionFields(fields);
+      if (!Object.keys(fields).length) toast('error', requestError(err, 'Could not save the alert review.'));
     }
   };
 
@@ -67,25 +83,14 @@ export function Alerts() {
     try {
       await alertsApi.dismiss(activeAlert.id, { reason: dismissReason });
       setDismissOpen(false);
+      toast('success', 'Alert dismissed.');
       await loadAlerts();
     } catch (err) {
-      toast('error', requestError(err, 'Failed to dismiss alert.'));
+      const fields = requestFields(err, ['reason']);
+      setActionFields(fields);
+      if (!Object.keys(fields).length) toast('error', requestError(err, 'Could not dismiss the alert.'));
     }
   };
-
-  const handleEscalateSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeAlert) return;
-    try {
-      const result = await alertsApi.escalate(activeAlert.id, { title: escalateTitle.trim() || undefined });
-      setEscalateOpen(false);
-      await loadAlerts();
-      navigate(`/incidents/${result.data.id}`);
-    } catch (err) {
-      toast('error', requestError(err, 'Failed to escalate alert.'));
-    }
-  };
-
 
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
@@ -112,7 +117,7 @@ export function Alerts() {
               width: '100%',
               padding: '8px 10px 8px 32px',
               background: 'var(--color-canvas)',
-              border: '1px solid #30363D',
+              border: '1px solid var(--color-border)',
               borderRadius: '6px',
               color: 'var(--color-text-primary)',
               fontSize: '13px',
@@ -124,7 +129,7 @@ export function Alerts() {
         <select
           value={statusFilter}
           onChange={e => { setPage(1); setStatusFilter(e.target.value); }}
-          style={{ padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
+          style={{ padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
         >
           <option value="">All Statuses</option>
           <option value="new">New</option>
@@ -137,7 +142,7 @@ export function Alerts() {
         <select
           value={severityFilter}
           onChange={e => { setPage(1); setSeverityFilter(e.target.value); }}
-          style={{ padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
+          style={{ padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
         >
           <option value="">All Severities</option>
           <option value="critical">Critical</option>
@@ -152,9 +157,14 @@ export function Alerts() {
       <div className="card" style={{ padding: '0', overflowX: 'auto' }}>
         <div style={{ overflowX: 'auto' }}>
           {listing.error && <p role="alert">Could not load records. <button className="btn btn-ghost" onClick={listing.refresh}>Retry</button></p>}
+        {user && !canRespond && (
+          <p style={{ padding: '12px 16px', margin: 0, color: 'var(--color-text-secondary)' }}>
+            You can view alerts. A SOC Analyst or SOC Lead can claim, triage, escalate, or dismiss them.
+          </p>
+        )}
         <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
             <thead>
-              <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid #30363D', color: 'var(--color-text-secondary)' }}>
+              <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
                 <th style={{ padding: '12px 16px' }}>Severity</th>
                 <th style={{ padding: '12px 16px' }}>Alert Title</th>
                 <th style={{ padding: '12px 16px' }}>Rule</th>
@@ -167,7 +177,7 @@ export function Alerts() {
             <tbody>
               {alerts.length > 0 ? (
                 alerts.map(alert => (
-                  <tr key={alert.id} style={{ borderBottom: '1px solid #21262D' }}>
+                  <tr key={alert.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
                     <td style={{ padding: '12px 16px' }}>
                       <SeverityBadge severity={alert.severity} />
                     </td>
@@ -187,19 +197,27 @@ export function Alerts() {
                     </td>
                     <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>
                       {alert.assignee_detail?.full_name || (
-                        <span style={{ color: '#6E7681', fontStyle: 'italic' }}>Unassigned</span>
+                        <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Unassigned</span>
                       )}
                     </td>
                     <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>
                       {formatRelative(alert.created_at)}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
-                        {alert.status === 'new' && (
+                      <div style={{ display: 'inline-flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => navigate(`/alerts/${alert.id}`)}
+                          aria-label={`Open alert #${alert.id}`}
+                        >
+                          View alert
+                        </button>
+                        {canRespond && alert.status === 'new' && (
                           <button
                             onClick={() => handleClaim(alert.id)}
                             className="btn btn-ghost btn-sm"
-                            style={{ fontSize: '11px', color: '#3FB950' }}
+                            style={{ fontSize: '11px', color: 'var(--color-success)' }}
                             title="Claim Alert"
                           >
                             <UserCheck size={14} style={{ marginRight: '4px' }} />
@@ -207,13 +225,14 @@ export function Alerts() {
                           </button>
                         )}
 
-                        {alert.status !== 'dismissed' && alert.status !== 'resolved' && (
+                        {canRespond && ['new', 'in_review'].includes(alert.status) && (
                           <>
                             <button
                               onClick={() => {
                                 setActiveAlert(alert);
                                 setTriageSeverity(alert.severity);
                                 setTriageNotes(alert.triage_notes || '');
+                                setActionFields({});
                                 setTriageOpen(true);
                               }}
                               className="btn btn-ghost btn-sm"
@@ -226,11 +245,10 @@ export function Alerts() {
                               <button
                                 onClick={() => {
                                   setActiveAlert(alert);
-                                  setEscalateTitle(`Incident: ${alert.title}`);
                                   setEscalateOpen(true);
                                 }}
                                 className="btn btn-ghost btn-sm"
-                                style={{ fontSize: '11px', color: '#F97316' }}
+                                style={{ fontSize: '11px', color: 'var(--color-high)' }}
                               >
                                 Escalate
                               </button>
@@ -240,10 +258,11 @@ export function Alerts() {
                               onClick={() => {
                                 setActiveAlert(alert);
                                 setDismissReason('');
+                                setActionFields({});
                                 setDismissOpen(true);
                               }}
                               className="btn btn-ghost btn-sm"
-                              style={{ fontSize: '11px', color: '#FF7B72' }}
+                              style={{ fontSize: '11px', color: 'var(--color-danger)' }}
                             >
                               Dismiss
                             </button>
@@ -274,13 +293,13 @@ export function Alerts() {
       >
         <form onSubmit={handleTriageSubmit}>
           <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="alert-severity" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Updated Severity
             </label>
-            <select
+            <select id="alert-severity" aria-invalid={!!actionFields.severity} aria-describedby={actionFields.severity ? "alert-severity-error" : undefined}
               value={triageSeverity}
               onChange={e => setTriageSeverity(e.target.value)}
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)' }}
             >
               <option value="critical">Critical</option>
               <option value="high">High</option>
@@ -288,19 +307,21 @@ export function Alerts() {
               <option value="low">Low</option>
               <option value="info">Info</option>
             </select>
+            {actionFields.severity && <p id="alert-severity-error" className="form-error" role="alert">{actionFields.severity}</p>}
           </div>
 
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="alert-notes" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Analyst Triage Assessment Notes
             </label>
-            <textarea
+            <textarea id="alert-notes" aria-invalid={!!actionFields.notes} aria-describedby={actionFields.notes ? "alert-notes-error" : undefined}
               rows={4}
               value={triageNotes}
               onChange={e => setTriageNotes(e.target.value)}
               placeholder="Document observed threat indicators, affected assets, or findings..."
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {actionFields.notes && <p id="alert-notes-error" className="form-error" role="alert">{actionFields.notes}</p>}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -322,17 +343,18 @@ export function Alerts() {
       >
         <form onSubmit={handleDismissSubmit}>
           <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
+            <label htmlFor="alert-reason" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Dismissal Reason (Required)
             </label>
-            <textarea
+            <textarea id="alert-reason" aria-invalid={!!actionFields.reason} aria-describedby={actionFields.reason ? "alert-reason-error" : undefined}
               rows={4}
               required
               value={dismissReason}
               onChange={e => setDismissReason(e.target.value)}
               placeholder="Explain why this detection is considered false positive or benign..."
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
+              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
             />
+            {actionFields.reason && <p id="alert-reason-error" className="form-error" role="alert">{actionFields.reason}</p>}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
@@ -346,40 +368,12 @@ export function Alerts() {
         </form>
       </FormDialog>
 
-      {/* Escalate Modal */}
-      <FormDialog
-        isOpen={escalateOpen}
-        onClose={() => setEscalateOpen(false)}
-        title={`Escalate to Security Incident Case`}
-      >
-        <form onSubmit={handleEscalateSubmit}>
-          <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '16px' }}>
-            Escalating this alert creates a tracked Incident Case in the incident response lifecycle.
-          </p>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
-              Incident Title
-            </label>
-            <input
-              type="text"
-              required
-              value={escalateTitle}
-              onChange={e => setEscalateTitle(e.target.value)}
-              style={{ width: '100%', padding: '8px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-            <button type="button" onClick={() => setEscalateOpen(false)} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Create & Escalate Incident
-            </button>
-          </div>
-        </form>
-      </FormDialog>
+      {escalateOpen && activeAlert && <IncidentIntakeDialog alert={activeAlert}
+        onClose={() => setEscalateOpen(false)} onSave={async draft => {
+          const { data } = await alertsApi.escalate(activeAlert.id, draft);
+          toast('success', 'Alert escalated. The linked incident is ready to investigate.');
+          navigate(`/incidents/${data.id}`, { state: { escalatedAlert: activeAlert.id } });
+        }} />}
     </div>
   );
 }

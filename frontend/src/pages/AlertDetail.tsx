@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useApi } from '../hooks/useApi';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Shield, Clock, User, AlertTriangle, CheckCircle, FileText } from 'lucide-react';
 import { alertsApi } from '../api/alerts';
@@ -8,20 +8,17 @@ import { formatDateTime } from '../utils/formatters';
 export function AlertDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [alert, setAlert] = useState<any | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (id) {
-      alertsApi.get(Number(id))
-        .then(res => setAlert(res.data))
-        .catch(err => console.error(err))
-        .finally(() => setLoading(false));
-    }
-  }, [id]);
+  const { data: alert, loading, error, refresh } = useApi(() => alertsApi.get(Number(id)), [id]);
 
   if (loading) return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>Loading alert details...</div>;
-  if (!alert) return <div style={{ padding: '32px', textAlign: 'center', color: '#FF7B72' }}>Alert record not found.</div>;
+  if (error) return <section className="panel page-stack">
+    <p role="alert">{error}</p>
+    <div className="toolbar">
+      <button className="btn btn-secondary" onClick={refresh}>Try again</button>
+      <button className="btn btn-ghost" onClick={() => navigate('/alerts')}>Back to Alert Queue</button>
+    </div>
+  </section>;
+  if (!alert) return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--color-danger)' }}>Alert record not found.</div>;
 
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -72,18 +69,18 @@ export function AlertDetail() {
             </div>
             <div>
               <span style={{ color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' }}>Assigned Analyst:</span>
-              <span>{alert.assignee?.full_name || alert.assignee_detail?.full_name || 'Unassigned'}</span>
+              <span>{alert.assignee_detail?.full_name || 'Unassigned'}</span>
             </div>
             <div>
               <span style={{ color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' }}>Triage Notes:</span>
-              <p style={{ margin: 0, color: '#C9D1D9', background: 'var(--color-canvas)', padding: '10px', borderRadius: '6px', border: '1px solid #30363D' }}>
+              <p style={{ margin: 0, color: 'var(--color-text-primary)', background: 'var(--color-canvas)', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-border)' }}>
                 {alert.triage_notes || 'No triage notes provided yet.'}
               </p>
             </div>
             {alert.dismissal_reason && (
               <div>
-                <span style={{ color: '#FF7B72', display: 'block', marginBottom: '2px' }}>Dismissal Reason:</span>
-                <p style={{ margin: 0, color: '#FF7B72', background: 'rgba(255, 123, 114, 0.1)', padding: '10px', borderRadius: '6px', border: '1px solid #FF7B72' }}>
+                <span style={{ color: 'var(--color-danger)', display: 'block', marginBottom: '2px' }}>Dismissal Reason:</span>
+                <p style={{ margin: 0, color: 'var(--color-danger)', background: 'color-mix(in srgb, var(--color-danger) 10%, transparent)', padding: '10px', borderRadius: '6px', border: '1px solid var(--color-danger)' }}>
                   {alert.dismissal_reason}
                 </p>
               </div>
@@ -98,11 +95,11 @@ export function AlertDetail() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '13px' }}>
               <div>
                 <span style={{ color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' }}>Event Type:</span>
-                <span className="badge badge-subtle">{alert.event_detail?.event_type || alert.event?.event_type || 'Security Telemetry'}</span>
+                <span className="badge badge-subtle">{alert.event_detail?.event_type || 'Security Telemetry'}</span>
               </div>
               <div>
                 <span style={{ color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' }}>Severity Rating:</span>
-                <span style={{ textTransform: 'capitalize' }}>{alert.event_detail?.severity || alert.event?.severity}</span>
+                <span style={{ textTransform: 'capitalize' }}>{alert.event_detail?.severity}</span>
               </div>
               <div>
                 <span style={{ color: 'var(--color-text-secondary)', display: 'block', marginBottom: '2px' }}>Raw Payload & Metadata:</span>
@@ -110,7 +107,7 @@ export function AlertDetail() {
                   margin: 0,
                   padding: '12px',
                   background: 'var(--color-canvas)',
-                  border: '1px solid #30363D',
+                  border: '1px solid var(--color-border)',
                   borderRadius: '6px',
                   fontSize: '12px',
                   overflowX: 'auto',

@@ -99,6 +99,11 @@ class Event(models.Model):
     external_event_id = models.CharField(max_length=255, blank=True, db_index=True)
     event_type = models.CharField(max_length=100, db_index=True)
     severity = models.CharField(max_length=20, choices=SEVERITY_CHOICES, default="info", db_index=True)
+    reviewed_risk = models.CharField(
+        max_length=20, choices=[("low", "Low"), ("medium", "Medium"), ("high", "High"), ("critical", "Critical")],
+        null=True, blank=True,
+    )
+    risk_review_reason = models.TextField(blank=True, default="")
     message = models.TextField()
     source_ip = models.GenericIPAddressField(null=True, blank=True)
     metadata = models.JSONField(default=dict, blank=True)

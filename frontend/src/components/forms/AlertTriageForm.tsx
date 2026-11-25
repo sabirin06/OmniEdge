@@ -1,3 +1,4 @@
+import { requestError } from '../../api/errors';
 import React, { useState } from 'react';
 import { FormDialog } from '../ui/FormDialog';
 import { useToast } from '../ui/Toast';
@@ -26,7 +27,7 @@ export function AlertTriageForm({ open, alert, onClose, onSaved }: TriageProps) 
       await alertsApi.triage(alert.id, { severity, triage_notes: notes });
       toast('success', 'Alert triaged');
       onSaved(); onClose();
-    } catch { toast('error', 'Failed to triage'); }
+    } catch (error) { toast('error', requestError(error, 'Could not save the alert review.')); }
     finally { setLoading(false); }
   };
 
@@ -62,7 +63,7 @@ export function AlertDismissForm({ open, alert, onClose, onSaved }: DismissProps
       await alertsApi.dismiss(alert.id, { dismiss_reason: reason });
       toast('success', 'Alert dismissed');
       onSaved(); onClose();
-    } catch { toast('error', 'Failed to dismiss'); }
+    } catch (error) { toast('error', requestError(error, 'Could not dismiss the alert.')); }
     finally { setLoading(false); }
   };
 

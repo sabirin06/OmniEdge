@@ -12,6 +12,7 @@ AUDITED_FIELDS = {
     "monitoring.asset": ("name", "asset_type", "criticality", "status"),
     "monitoring.logsource": ("name", "asset_id", "enabled"),
     "monitoring.rule": ("name", "event_type", "severity", "enabled"),
+    "incidents.playbook": ("name", "category", "enabled"),
     "monitoring.alert": ("status", "severity", "assignee_id", "incident_id"),
 }
 

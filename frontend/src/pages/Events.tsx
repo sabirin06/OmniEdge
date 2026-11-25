@@ -33,7 +33,7 @@ export function Events() {
 
   const [listFilter, setListFilter] = useState('');
   const [page, setPage] = useState(1);
-  const listing = useApi(() => eventsApi.list({ page, search, severity: listFilter || undefined }), [page, search, listFilter]);
+  const listing = useApi(() => eventsApi.list({ page, search, risk: listFilter || undefined }), [page, search, listFilter]);
   const events = listing.data?.results ?? [];
   const loading = listing.loading;
   const loadEvents = listing.refresh;
@@ -45,7 +45,7 @@ export function Events() {
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Security Telemetry Events</h1>
           <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-            Raw and normalized event ingestion stream from connected assets and collectors
+            Review event severity. Open JSON to inspect the original event.
           </p>
         </div>
       </div>
@@ -56,21 +56,21 @@ export function Events() {
           placeholder="Filter events by type, source IP, or message contents..."
           value={search}
           onChange={e => { setPage(1); setSearch(e.target.value); }}
-          style={{ width: '100%', padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid #30363D', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px', boxSizing: 'border-box' }}
+          style={{ width: '100%', padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px', boxSizing: 'border-box' }}
         />
       </div>
 
       <div className="form-group">
         <label htmlFor="monitoring-filter">Filter by severity</label>
         <select id="monitoring-filter" value={listFilter} onChange={e => { setPage(1); setListFilter(e.target.value); }}>
-          <option value="">All</option><option value="info">Info</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
+          <option value="">All</option><option value="low">Low</option><option value="medium">Medium</option><option value="high">High</option><option value="critical">Critical</option>
         </select>
       </div>
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
         {listing.error && <p role="alert">Could not load records. <button className="btn btn-ghost" onClick={listing.refresh}>Retry</button></p>}
         <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
           <thead>
-            <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid #30363D', color: 'var(--color-text-secondary)' }}>
+            <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
               <th style={{ padding: '12px 16px' }}>Severity</th>
               <th style={{ padding: '12px 16px' }}>Event Type</th>
               <th style={{ padding: '12px 16px' }}>Source IP</th>
@@ -82,8 +82,10 @@ export function Events() {
           <tbody>
             {events.length > 0 ? (
               events.map(e => (
-                <tr key={e.id} style={{ borderBottom: '1px solid #21262D' }}>
-                  <td style={{ padding: '12px 16px' }}><SeverityBadge severity={e.severity} /></td>
+                <tr key={e.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                  <td style={{ padding: '12px 16px' }}>
+                    <SeverityBadge severity={e.risk_severity ?? 'low'} />
+                  </td>
                   <td style={{ padding: '12px 16px', fontWeight: '600', color: 'var(--color-accent-hover)' }}>{e.event_type}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)', fontFamily: 'monospace' }}>{e.source_ip || 'N/A'}</td>
                   <td style={{ padding: '12px 16px', color: 'var(--color-text-primary)' }}>{e.message}</td>
@@ -120,8 +122,8 @@ export function Events() {
           <div className="card" style={{ width: '90%', maxWidth: '600px', maxHeight: '80vh', overflowY: 'auto', padding: '24px' }}>
             <h2 style={{ fontSize: '16px', fontWeight: '700', marginBottom: '16px' }}>Event #{activeEvent.id} Metadata</h2>
             <pre style={{
-              background: 'var(--color-canvas)', padding: '14px', borderRadius: '6px', border: '1px solid #30363D',
-              fontSize: '12px', color: '#3FB950', fontFamily: 'monospace', overflowX: 'auto'
+              background: 'var(--color-canvas)', padding: '14px', borderRadius: '6px', border: '1px solid var(--color-border)',
+              fontSize: '12px', color: 'var(--color-success)', fontFamily: 'monospace', overflowX: 'auto'
             }}>
               {JSON.stringify(activeEvent, null, 2)}
             </pre>

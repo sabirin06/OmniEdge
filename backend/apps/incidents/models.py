@@ -181,6 +181,7 @@ class Action(models.Model):
     class Meta:
         db_table = "incidents_action"
         ordering = ["created_at"]
+        constraints = [models.UniqueConstraint(fields=["incident", "playbook_step"], name="unique_incident_playbook_step")]
         indexes = [
             models.Index(fields=["incident", "status"]),
         ]

@@ -1,3 +1,7 @@
+import { useSearchParams } from 'react-router-dom';
+import { useApi } from '../hooks/useApi';
+import { useToast } from '../components/ui/Toast';
+import { Pagination } from '../components/ui/Pagination';
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -7,105 +11,70 @@ import {
 import { incidentsApi } from '../api/incidents';
 import { SeverityBadge, StatusBadge } from '../components/ui/Badge';
 import { formatRelative, formatDateTime } from '../utils/formatters';
-import { FormDialog } from '../components/ui/FormDialog';
+import { IncidentIntakeDialog } from '../components/forms/IncidentIntakeDialog';
 import { useAuth } from '../contexts/AuthContext';
 
 export function Incidents() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [incidents, setIncidents] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const toast = useToast();
+  const canRespond = user?.role === 'soc_lead' || user?.role === 'soc_analyst';
+  const [page, setPage] = useState(1);
+  const [params, setParams] = useSearchParams();
+  const search = params.get('q') ?? '';
+  const setSearch = (value: string) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set('q', value);
+    else next.delete('q');
+    setParams(next, { replace: true });
+  };
   const [statusFilter, setStatusFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
 
-  // New incident form
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState('high');
-
-  const loadIncidents = async () => {
-    setLoading(true);
-    try {
-      const params: any = {};
-      if (statusFilter) params.status = statusFilter;
-      const res = await incidentsApi.list(params);
-      const data = res.data.results ? res.data.results : (Array.isArray(res.data) ? res.data : []);
-      setIncidents(data);
-    } catch (err) {
-      console.error('Failed to load incidents', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadIncidents();
-  }, [statusFilter]);
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await incidentsApi.create({
-        title,
-        description,
-        severity,
-        tenant: user?.tenant || 1,
-      });
-      setCreateOpen(false);
-      setTitle('');
-      setDescription('');
-      await loadIncidents();
-    } catch (err) {
-      console.error('Failed to create incident', err);
-    }
-  };
-
-  const filtered = incidents.filter(inc => {
-    const q = search.toLowerCase();
-    return (
-      (inc.title?.toLowerCase() || '').includes(q) ||
-      (inc.reference?.toLowerCase() || '').includes(q) ||
-      (inc.owner?.full_name?.toLowerCase() || '').includes(q)
-    );
-  });
+    setPage(1);
+  }, [search]);
+  const listing = useApi(() => incidentsApi.list({ page, search, status: statusFilter }), [page, search, statusFilter]);
+  const filtered: any[] = listing.data?.results ?? [];
+  const loading = listing.loading;
 
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
           <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Incident Cases</h1>
-          <p style={{ margin: 0, color: '#8B949E', fontSize: '13px' }}>
+          <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
             Active investigations, containment execution, and root-cause resolution
           </p>
         </div>
 
         <button
           onClick={() => setCreateOpen(true)}
+          disabled={!canRespond}
           className="btn btn-primary"
           style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
         >
           <Plus size={16} />
-          <span>New Incident Case</span>
+          <span>Create incident</span>
         </button>
       </div>
 
       {/* Filter Bar */}
       <div className="card" style={{ padding: '16px', marginBottom: '20px', display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
         <div style={{ position: 'relative', flex: '1', minWidth: '220px' }}>
-          <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#8B949E' }} />
+          <Search size={15} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
           <input
             type="text"
             placeholder="Search by reference, title, or owner..."
             value={search}
-            onChange={e => setSearch(e.target.value)}
+            onChange={e => { setSearch(e.target.value); setPage(1); }}
             style={{
               width: '100%',
               padding: '8px 10px 8px 32px',
-              background: '#0D1117',
-              border: '1px solid #30363D',
+              background: 'var(--color-canvas)',
+              border: '1px solid var(--color-border)',
               borderRadius: '6px',
-              color: '#E6EDF3',
+              color: 'var(--color-text-primary)',
               fontSize: '13px',
               boxSizing: 'border-box'
             }}
@@ -114,8 +83,8 @@ export function Incidents() {
 
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
-          style={{ padding: '8px 12px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', fontSize: '13px' }}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          style={{ padding: '8px 12px', background: 'var(--color-canvas)', border: '1px solid var(--color-border)', borderRadius: '6px', color: 'var(--color-text-primary)', fontSize: '13px' }}
         >
           <option value="">All Statuses</option>
           <option value="open">Open</option>
@@ -129,9 +98,10 @@ export function Incidents() {
       {/* Incidents Table */}
       <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
         <div style={{ overflowX: 'auto' }}>
+          {listing.error && <p role="alert">Could not load incidents. <button onClick={listing.refresh}>Retry</button></p>}
           <table className="data-table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
             <thead>
-              <tr style={{ background: '#161B22', borderBottom: '1px solid #30363D', color: '#8B949E' }}>
+              <tr style={{ background: 'var(--color-surface)', borderBottom: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}>
                 <th style={{ padding: '12px 16px' }}>Reference</th>
                 <th style={{ padding: '12px 16px' }}>Title</th>
                 <th style={{ padding: '12px 16px' }}>Severity</th>
@@ -144,13 +114,13 @@ export function Incidents() {
             <tbody>
               {filtered.length > 0 ? (
                 filtered.map(inc => (
-                  <tr key={inc.id} style={{ borderBottom: '1px solid #21262D' }}>
-                    <td style={{ padding: '12px 16px', fontWeight: '700', color: '#58A6FF' }}>
+                  <tr key={inc.id} style={{ borderBottom: '1px solid var(--color-border-subtle)' }}>
+                    <td style={{ padding: '12px 16px', fontWeight: '700', color: 'var(--color-accent-hover)' }}>
                       {inc.reference}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       <span
-                        style={{ fontWeight: '600', color: '#E6EDF3', cursor: 'pointer' }}
+                        style={{ fontWeight: '600', color: 'var(--color-text-primary)', cursor: 'pointer' }}
                         onClick={() => navigate(`/incidents/${inc.id}`)}
                       >
                         {inc.title}
@@ -162,17 +132,17 @@ export function Incidents() {
                     <td style={{ padding: '12px 16px' }}>
                       <StatusBadge status={inc.status} />
                     </td>
-                    <td style={{ padding: '12px 16px', color: '#8B949E' }}>
-                      {inc.owner?.full_name || inc.owner_name || 'Unassigned'}
+                    <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>
+                      {inc.owner_detail?.full_name || 'Unassigned'}
                     </td>
-                    <td style={{ padding: '12px 16px', color: '#8B949E' }}>
+                    <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>
                       {formatRelative(inc.created_at)}
                     </td>
                     <td style={{ padding: '12px 16px', textAlign: 'right' }}>
                       <button
                         onClick={() => navigate(`/incidents/${inc.id}`)}
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: '11px', color: '#58A6FF' }}
+                        style={{ fontSize: '11px', color: 'var(--color-accent-hover)' }}
                       >
                         Open Case
                       </button>
@@ -181,76 +151,23 @@ export function Incidents() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} style={{ padding: '36px', textAlign: 'center', color: '#8B949E' }}>
+                  <td colSpan={7} style={{ padding: '36px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
                     {loading ? 'Loading incidents...' : 'No incident cases found.'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
+          <Pagination page={page} pageSize={50} total={listing.data?.count ?? 0} onPageChange={setPage} />
         </div>
       </div>
 
       {/* Create Modal */}
-      <FormDialog
-        isOpen={createOpen}
-        onClose={() => setCreateOpen(false)}
-        title="Create New Incident Case"
-      >
-        <form onSubmit={handleCreate}>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Incident Title
-            </label>
-            <input
-              type="text"
-              required
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="e.g. Ransomware Activity on Finance Share"
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Severity
-            </label>
-            <select
-              value={severity}
-              onChange={e => setSeverity(e.target.value)}
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3' }}
-            >
-              <option value="critical">Critical</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
-
-          <div style={{ marginBottom: '20px' }}>
-            <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: '#8B949E' }}>
-              Incident Description & Scope
-            </label>
-            <textarea
-              rows={4}
-              value={description}
-              onChange={e => setDescription(e.target.value)}
-              placeholder="Summary of detected attack vectors, compromised hosts, or business impact..."
-              style={{ width: '100%', padding: '8px', background: '#0D1117', border: '1px solid #30363D', borderRadius: '6px', color: '#E6EDF3', boxSizing: 'border-box' }}
-            />
-          </div>
-
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-            <button type="button" onClick={() => setCreateOpen(false)} className="btn btn-secondary">
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary">
-              Create Case
-            </button>
-          </div>
-        </form>
-      </FormDialog>
+      {createOpen && <IncidentIntakeDialog onClose={() => setCreateOpen(false)} onSave={async draft => {
+        const { data } = await incidentsApi.create(draft);
+        toast('success', 'Incident created');
+        navigate(`/incidents/${data.id}`);
+      }} />}
     </div>
   );
 }

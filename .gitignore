@@ -16,3 +16,5 @@ dist-ssr/
 # IDE
 .vscode/
 .idea/
+
+private_evidence/

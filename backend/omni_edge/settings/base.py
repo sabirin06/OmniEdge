@@ -127,12 +127,11 @@ CSRF_COOKIE_HTTPONLY = False  # Must be readable by JS for SPA
 CSRF_TRUSTED_ORIGINS = []
 
 # Evidence upload settings
-EVIDENCE_MAX_SIZE_MB = 50
+EVIDENCE_ROOT = BASE_DIR / "private_evidence"
+EVIDENCE_MAX_SIZE_MB = 5
 EVIDENCE_ALLOWED_TYPES = [
-    "image/png", "image/jpeg", "image/gif",
+    "image/png", "image/jpeg",
     "application/pdf",
     "text/plain", "text/csv",
-    "application/zip",
     "application/json",
-    "video/mp4",
 ]

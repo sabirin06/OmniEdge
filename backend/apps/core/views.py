@@ -10,16 +10,17 @@ from drf_spectacular.utils import extend_schema, inline_serializer
 from django.db.models import Count, Q
 from rest_framework import generics, serializers, status
 from rest_framework.exceptions import ValidationError
+from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import ManagedRole, Tenant, User
 from .serializers import (
-    TenantSerializer, UserSerializer, UserMeSerializer,
+    TenantSerializer, UserSerializer, UserMeSerializer, UserDirectorySerializer,
     LoginSerializer, AuditLogSerializer, ManagedRoleSerializer,
 )
-from .permissions import IsCustomerAdmin, IsPlatformAdmin, IsSOCLead
+from .permissions import IsCustomerAdmin, IsPlatformAdmin, IsSOCLead, IsSOCAnalyst
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ class LoginView(APIView):
         user = serializer.validated_data["user"]
         login(request, user)
         user_data = UserSerializer(user).data
+        user_data["tenant"] = user.tenant_id
         return Response({"user": user_data, **user_data})
 
 
@@ -151,7 +153,15 @@ class ManagedRoleDetailView(generics.RetrieveUpdateAPIView):
     queryset = ManagedRole.objects.all()
 
 
+class UserSearchFilter(SearchFilter):
+    def get_search_fields(self, view, request):
+        if request.user.is_authenticated and request.user.role in ("soc_analyst", "soc_lead"):
+            return ["full_name"]
+        return super().get_search_fields(view, request)
+
+
 class UserListCreateView(generics.ListCreateAPIView):
+    filter_backends = [UserSearchFilter, OrderingFilter]
     permission_classes = [IsAuthenticated]
     serializer_class = UserSerializer
     search_fields = ["email", "full_name"]
@@ -159,13 +169,23 @@ class UserListCreateView(generics.ListCreateAPIView):
     ordering = ["full_name"]
 
     def get_permissions(self):
-        return [IsCustomerAdmin()] if self.request.method == "POST" else [IsAuthenticated()]
+        if self.request.method == "POST" or self.request.user.is_authenticated and self.request.user.is_platform_admin:
+            return [IsCustomerAdmin()]
+        return [IsSOCAnalyst()]
+
+    def get_serializer_class(self):
+        user = self.request.user
+        if user.is_authenticated and user.role in ("soc_analyst", "soc_lead"):
+            return UserDirectorySerializer
+        return UserSerializer
 
     def get_queryset(self):
         user = self.request.user
+        users = User.objects.select_related("tenant", "managed_role")
         if user.is_platform_admin:
-            return User.objects.select_related("tenant", "managed_role").all()
-        return User.objects.select_related("tenant", "managed_role").filter(tenant=user.tenant)
+            return users
+        scoped = users.filter(tenant=user.tenant)
+        return scoped.filter(is_active=True) if user.role in ("soc_analyst", "soc_lead") else scoped
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -179,8 +199,7 @@ class UserListCreateView(generics.ListCreateAPIView):
 class UserDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = UserSerializer
 
-    def get_permissions(self):
-        return [IsCustomerAdmin()] if self.request.method in ("PATCH", "PUT") else [IsAuthenticated()]
+    permission_classes = [IsCustomerAdmin]
 
     def get_queryset(self):
         user = self.request.user
@@ -208,25 +227,27 @@ class DashboardView(APIView):
         tenant = user.tenant
 
         if user.is_platform_admin:
+            organizations = Tenant.objects.all()
+            active = organizations.filter(status="active").count()
+            suspended = organizations.filter(status="suspended").count()
+            active_users = User.objects.filter(is_active=True)
             return Response({
-                "tenants": Tenant.objects.count(),
-                "active_tenants": Tenant.objects.filter(status="active").count(),
-                "total_users": User.objects.filter(is_active=True).count(),
-                "total_alerts_new": Alert.objects.filter(status="new").count(),
-                "active_incidents": Incident.objects.exclude(status__in=["resolved", "closed"]).count(),
-                "events_24h": Event.objects.filter(received_at__gte=timezone.now() - datetime.timedelta(hours=24)).count(),
-                "open_tasks": Action.objects.filter(status__in=["pending", "in_progress"]).count(),
-                "alerts_by_severity": [
-                    {"severity": s, "count": Alert.objects.filter(severity=s).count()}
-                    for s in ["critical", "high", "medium", "low", "info"]
+                "scope": "platform",
+                "tenants": organizations.count(),
+                "active_tenants": active,
+                "suspended_tenants": suspended,
+                "total_users": active_users.count(),
+                "users_by_role": [
+                    {"role": row["role"], "count": row["count"]}
+                    for row in active_users.order_by().values("role").annotate(count=Count("id")).order_by("role")
                 ],
-                "incidents_by_status": [
-                    {"status": s, "count": Incident.objects.filter(status=s).count()}
-                    for s in ["open", "investigating", "containment", "resolved", "closed"]
-                ],
-                "recent_alerts": AlertSerializer(Alert.objects.select_related("event", "rule", "assignee")[:8], many=True).data,
+                "recent_tenants": TenantSerializer(organizations.order_by("-created_at")[:8], many=True).data,
+                "as_of": timezone.now(),
             })
 
+        if tenant is None:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("An organization account is required.")
         alerts_qs = Alert.objects.filter(tenant=tenant)
         incidents_qs = Incident.objects.filter(tenant=tenant)
         events_qs = Event.objects.filter(tenant=tenant)
@@ -242,7 +263,19 @@ class DashboardView(APIView):
         ]
         recent_alerts = AlertSerializer(alerts_qs.select_related("event", "rule", "assignee")[:8], many=True).data
 
+        from django.db.models.functions import TruncDate
+        now = timezone.now()
+        start_day = timezone.localdate() - datetime.timedelta(days=6)
+        event_totals = dict(events_qs.filter(received_at__date__gte=start_day).order_by()
+            .annotate(day=TruncDate("received_at")).values("day").annotate(count=Count("id")).values_list("day", "count"))
+        alert_totals = dict(alerts_qs.filter(created_at__date__gte=start_day).order_by()
+            .annotate(day=TruncDate("created_at")).values("day").annotate(count=Count("id")).values_list("day", "count"))
+        days = [start_day + datetime.timedelta(days=offset) for offset in range(7)]
+
         return Response({
+            "scope": "tenant",
+            "as_of": now,
+            "activity": [{"day": day.isoformat(), "events": event_totals.get(day, 0), "alerts": alert_totals.get(day, 0)} for day in days],
             "total_alerts_new": alerts_qs.filter(status="new").count(),
             "active_incidents": incidents_qs.exclude(status__in=["resolved", "closed"]).count(),
             "events_24h": events_qs.filter(received_at__gte=timezone.now() - datetime.timedelta(hours=24)).count(),
@@ -295,6 +328,7 @@ class HealthView(APIView):
 # ---------------------------------------------------------------------------
 
 class AuditLogListView(generics.ListAPIView):
+    search_fields = ["action", "entity_type", "entity_id", "actor__email", "actor__full_name"]
     permission_classes = [IsSOCLead]
     serializer_class = AuditLogSerializer
     ordering_fields = ["timestamp"]
@@ -304,7 +338,9 @@ class AuditLogListView(generics.ListAPIView):
         from apps.incidents.models import AuditLog
         user = self.request.user
         qs = AuditLog.objects.select_related("actor", "tenant")
-        if not user.is_platform_admin:
+        if user.is_platform_admin:
+            qs = qs.filter(Q(actor__role="platform_admin") | Q(tenant__isnull=True, entity_type__in=("ManagedRole", "Tenant")))
+        else:
             qs = qs.filter(tenant=user.tenant)
         entity_type = self.request.query_params.get("entity_type")
         if entity_type:
@@ -320,6 +356,8 @@ class AuditLogDetailView(generics.RetrieveAPIView):
         from apps.incidents.models import AuditLog
         user = self.request.user
         qs = AuditLog.objects.select_related("actor", "tenant")
-        if not user.is_platform_admin:
+        if user.is_platform_admin:
+            qs = qs.filter(Q(actor__role="platform_admin") | Q(tenant__isnull=True, entity_type__in=("ManagedRole", "Tenant")))
+        else:
             qs = qs.filter(tenant=user.tenant)
         return qs

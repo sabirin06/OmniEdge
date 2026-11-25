@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { requestError } from '../api/errors';
 import type { AxiosResponse } from 'axios';
 
 interface UseApiState<T> {
@@ -25,7 +26,7 @@ export function useApi<T>(
       .then(res => { if (id === counter.current) { setData(res.data); setLoading(false); } })
       .catch(err => {
         if (id === counter.current) {
-          setError(err.response?.data?.detail ?? err.message ?? 'Unknown error');
+          setError(requestError(err, 'Could not load this information. Please try again.'));
           setLoading(false);
         }
       });

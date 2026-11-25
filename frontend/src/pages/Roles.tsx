@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { requestError, requestFields } from '../api/errors';
 import { rolesApi, builtInRoles } from '../api/roles';
 import { FormDialog } from '../components/ui/FormDialog';
 import { useToast } from '../components/ui/Toast';
@@ -21,19 +22,22 @@ function RoleManagement() {
   const [baseRole, setBaseRole] = useState<UserRole>('soc_analyst');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [nameError, setNameError] = useState('');
 
   const open = (role: ManagedRole | null) => {
     setEditing(role);
     setName(role?.name ?? '');
     setBaseRole(role?.base_role ?? 'soc_analyst');
     setError('');
+    setNameError('');
   };
 
   const save = async () => {
     if (saving) return;
-    if (!name.trim()) { setError('Enter a role name.'); return; }
+    if (!name.trim()) { setNameError('Enter a role name.'); return; }
     setSaving(true);
     setError('');
+    setNameError('');
     try {
       if (editing) await rolesApi.rename(editing.id, name.trim());
       else await rolesApi.create({ name: name.trim(), base_role: baseRole });
@@ -41,8 +45,9 @@ function RoleManagement() {
       setEditing(undefined);
       roles.refresh();
     } catch (err: unknown) {
-      const errors = (err as { response?: { data?: { errors?: { name?: string[] } } } }).response?.data?.errors;
-      setError(errors?.name?.[0] ?? 'Could not save the role.');
+      const fields = requestFields(err, ['name']);
+      if (fields.name) setNameError(fields.name);
+      else setError(requestError(err, 'Could not save the role.'));
     } finally {
       setSaving(false);
     }
@@ -74,7 +79,10 @@ function RoleManagement() {
         onClose={() => { if (!saving) setEditing(undefined); }} onSubmit={save} submitLoading={saving}>
         <div className="form-group">
           <label htmlFor="role-name">Role name</label>
-          <input id="role-name" value={name} maxLength={100} onChange={e => setName(e.target.value)} />
+          <input id="role-name" value={name} maxLength={100} aria-invalid={!!nameError}
+            aria-describedby={nameError ? 'role-name-error' : undefined}
+            onChange={e => { setName(e.target.value); setNameError(''); }} />
+          {nameError && <p id="role-name-error" className="form-error" role="alert">{nameError}</p>}
         </div>
         <div className="form-group">
           <label htmlFor="base-role">Permission level</label>

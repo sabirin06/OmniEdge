@@ -1,3 +1,4 @@
+import { requestError } from '../../api/errors';
 import React, { useState, useEffect } from 'react';
 import { FormDialog } from '../ui/FormDialog';
 import { useToast } from '../ui/Toast';
@@ -70,7 +71,7 @@ export function IncidentForm({ open, incident, linkedAlertId, onClose, onSaved }
       }
       toast('success', incident ? 'Incident updated' : 'Incident created');
       onSaved(saved); onClose();
-    } catch { toast('error', 'Failed to save incident'); }
+    } catch (error) { toast('error', requestError(error, 'Could not save the incident.')); }
     finally { setLoading(false); }
   };
 
