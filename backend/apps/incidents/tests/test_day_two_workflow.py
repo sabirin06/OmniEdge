@@ -122,6 +122,24 @@ class DayTwoWorkflowTests(TestCase):
             self.authenticate(self.outsider)
             self.request("get", path, 404)
 
+    def test_evidence_database_storage_round_trip(self):
+        from apps.incidents.models import Evidence, EvidenceBlob
+        self.authenticate(self.analyst)
+        incident = self.request("post", "incidents/", 201, {"title": "Database evidence demo"}).data
+        case = f"incidents/{incident['id']}/evidence/"
+        data = b"Fictional note stored in PostgreSQL."
+        with self.settings(EVIDENCE_STORAGE="database"):
+            upload = {"file": SimpleUploadedFile("db.txt", data, content_type="text/plain")}
+            saved = self.request("post", case, 201, upload, "multipart").data
+            stored = Evidence.objects.get(pk=saved["id"]).stored_path
+            self.assertTrue(stored.startswith("db:"))
+            self.assertTrue(EvidenceBlob.objects.filter(key=stored[3:]).exists())
+            path = case + f"{saved['id']}/download/"
+            response = self.request("get", path, 200)
+            self.assertEqual(b"".join(response.streaming_content), data)
+            self.authenticate(self.outsider)
+            self.request("get", path, 404)
+
 
 class ConcurrentEscalationTests(TransactionTestCase):
     def test_two_requests_create_one_case(self):

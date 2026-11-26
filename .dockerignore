@@ -1,0 +1,24 @@
+# Used by the root Dockerfile (single-container image, build context = repo root).
+.git
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.env
+*.pem
+*.key
+**/node_modules/
+**/dist/
+**/.venv/
+**/venv/
+**/__pycache__/
+**/*.py[cod]
+backend/media/
+backend/staticfiles/
+backend/private_evidence/
+**/*.sqlite3
+**/*.log
+.vscode/
+.idea/
+windows-collector/
+docs/

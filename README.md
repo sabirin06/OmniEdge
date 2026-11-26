@@ -30,6 +30,124 @@ npm.cmd run dev -- --configLoader runner
 - API documentation: http://127.0.0.1:8000/api/v1/docs/
 - Health: http://127.0.0.1:8000/api/v1/health/
 
+## Run with Docker (production stack)
+
+The Docker stack runs PostgreSQL 16, the Django API under Gunicorn, and Nginx serving the React build and proxying `/api/` and `/admin/`. Data lives in named volumes: `pgdata` (database), `evidence` (private evidence files) and `staticfiles`. Nginx is published only on `127.0.0.1:8080`; on a server a host Nginx adds HTTPS in front of it.
+
+```powershell
+copy .env.example .env
+```
+
+Edit `.env`: set `SECRET_KEY` and `POSTGRES_PASSWORD` to fresh random values (`openssl rand -hex 32`) and use the same password inside `DATABASE_URL`. Never commit `.env`.
+
+```sh
+docker compose config --quiet
+docker compose build
+docker compose up -d db
+docker compose run --rm api python manage.py migrate
+docker compose run --rm api python manage.py collectstatic --noinput
+docker compose run --rm api python manage.py seed_demo   # fictional demo data only
+docker compose up -d
+docker compose ps
+```
+
+- App: http://localhost:8080/
+- Health: http://localhost:8080/api/v1/health/
+- API documentation: http://localhost:8080/api/v1/docs/
+
+Useful commands: `docker compose logs --tail=100 api`, `docker compose restart`, `docker compose down` (keeps data). **Never run `docker compose down -v`** unless you intend to delete the database and evidence volumes.
+
+Optional account-email worker (only after SMTP values are set in `.env`): `docker compose --profile mail up -d mail`.
+
+### Deploy to Back4app Containers (free, no card) with Neon PostgreSQL (free)
+
+The public demo runs as **one Docker container** built from the root [Dockerfile](Dockerfile): Nginx serves the React build on port 10000 and proxies `/api/` and `/admin/` to Gunicorn/Django inside the same container. Back4app builds it from GitHub and serves it on a `https://<app>.b4a.run` URL with HTTPS. PostgreSQL is a free Neon project. The container filesystem is not persistent, so evidence files are stored privately in PostgreSQL (`EVIDENCE_STORAGE=database`, table `incidents_evidence_blob`) and are only downloadable through the permission-checked evidence API. Local Docker Compose is unchanged and keeps evidence on its volume.
+
+1. **Neon** (neon.tech, free): create a project and copy the **direct** connection string (Connect → turn off connection pooling; the host must not contain `-pooler`).
+2. **Back4app** (back4app.com → Containers, free, no card): sign up with GitHub, choose **Deploy a container**, install the Back4app GitHub app for the repository, pick branch `main`, **Root** `./` (the root Dockerfile), auto-deploy on.
+3. Environment variables:
+
+| Variable | Value |
+|---|---|
+| `SECRET_KEY` | long random value (`openssl rand -hex 32`) |
+| `DATABASE_URL` | Neon direct connection string |
+| `DATABASE_SSLMODE` | `require` |
+| `ALLOWED_HOSTS` | `.b4a.run` (leading dot = any b4a.run subdomain) |
+| `CSRF_TRUSTED_ORIGINS` | `https://*.b4a.run` |
+| `HTTPS_ENABLED` | `true` |
+| `EVIDENCE_STORAGE` | `database` |
+| `GUNICORN_WORKERS` | `1` (free plan has 256 MB RAM) |
+| `ACCOUNT_TRUST_PROXY_IP` | `true` |
+| `SEED_DEMO` | `true` for the first deploy only, then `false` |
+
+4. Create the app and wait for the build. Check `https://<app>.b4a.run/api/v1/health/` → `{"status":"ok","database":"connected"}`. After the first successful start, set `SEED_DEMO=false` (otherwise demo passwords are reset on every restart). Each start runs `migrate` (idempotent). Once you know the exact URL you can replace the wildcard values with it.
+
+**Back4app/Neon limitations:** the free container has 0.25 shared CPU and 256 MB RAM (the image uses about 70 MB with one worker), so it is slow under load; Back4app does not document uptime or sleep rules for the free plan. Neon Free suspends an idle database (short delay on the first query) and has limited storage (about 0.5 GB), which also holds evidence (5 MB per file). No SLA or managed backups: export with `pg_dump` against the Neon URL. Account email needs SMTP settings (`EMAIL_*`), not configured by default.
+
+Test the single-container image locally (uses the Compose database):
+
+```sh
+docker build -t omniedge-container .
+docker run --rm -p 127.0.0.1:10000:10000 --network omniedge_default \
+  -e SECRET_KEY=local-test -e DATABASE_URL=postgresql://omniedge:<password>@db:5432/omniedge \
+  -e DATABASE_SSLMODE=disable -e HTTPS_ENABLED=false -e EVIDENCE_STORAGE=database \
+  -e ALLOWED_HOSTS=localhost omniedge-container
+```
+
+### Alternative: Render (free) with Neon PostgreSQL (free)
+
+Note: Render's dashboard and `*.onrender.com` apps are unreachable from some networks; check before choosing it. The same root Dockerfile runs as one free Render web service using [render.yaml](render.yaml) (New → Blueprint). Set `DATABASE_URL`, and the other variables from the table above except `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`, which are filled in automatically from `RENDER_EXTERNAL_HOSTNAME`; `GUNICORN_WORKERS` can be `2` (512 MB RAM). The free service sleeps after about 15 minutes without traffic.
+
+### Alternative: self-hosted Ubuntu server (e.g. Oracle Cloud Always Free + DuckDNS + Let's Encrypt)
+
+1. Create an Always Free Ubuntu 24.04 VM with a public IPv4 and SSH key. In the VCN security list allow TCP 80 and 443 from `0.0.0.0/0` and TCP 22 (ideally only from your IP). Keep 5432, 8000 and 8080 closed.
+2. Point a DuckDNS subdomain (`yourname.duckdns.org`) at the VM's public IP.
+3. On the server:
+
+```sh
+sudo apt update && sudo apt install -y git curl ca-certificates nginx certbot python3-certbot-nginx
+curl -fsSL https://get.docker.com | sudo sh        # Docker Engine + Compose plugin
+# Oracle Ubuntu images ship iptables rules that block 80/443 by default:
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 80 -j ACCEPT
+sudo iptables -I INPUT 6 -m state --state NEW -p tcp --dport 443 -j ACCEPT
+sudo netfilter-persistent save
+
+git clone https://github.com/sabirin06/OmniEdge.git && cd OmniEdge
+cp .env.example .env && chmod 600 .env && nano .env
+```
+
+In the server `.env` use new secrets, `ALLOWED_HOSTS=yourname.duckdns.org`, `CSRF_TRUSTED_ORIGINS=https://yourname.duckdns.org` and keep `HTTPS_ENABLED=False` for now. Then run the same `docker compose` commands as above with `sudo`.
+
+4. Host Nginx — create `/etc/nginx/sites-available/omniedge`:
+
+```nginx
+server {
+    listen 80;
+    server_name yourname.duckdns.org;
+    client_max_body_size 6m;
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-For $remote_addr;
+    }
+}
+```
+
+```sh
+sudo ln -s /etc/nginx/sites-available/omniedge /etc/nginx/sites-enabled/omniedge
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d yourname.duckdns.org --redirect
+sudo certbot renew --dry-run          # renewal runs automatically via the certbot systemd timer
+```
+
+5. Set `HTTPS_ENABLED=True` in `.env`, then `sudo docker compose up -d --force-recreate api nginx` and check `curl -f https://yourname.duckdns.org/api/v1/health/`.
+
+**Updates:** back up first (`sudo docker compose exec db pg_dump -U omniedge omniedge > backup.sql`), then `git pull --ff-only origin main`, `sudo docker compose build`, run `migrate` and `collectstatic` again, and `sudo docker compose up -d`.
+
+**Known limitations:** the Always Free VM (1 GB RAM on the AMD shape) suits a demo, not production load; free capacity and account verification are not guaranteed by Oracle. DuckDNS is a free dynamic-DNS service with no SLA. Account email (password reset/verification codes) needs SMTP credentials, which are not configured by default. The `seed_demo` passwords are public demo values — change them or do not seed on a publicly reachable instance used for anything beyond a demo. There are no automated backups; take `pg_dump` and evidence-volume backups yourself.
+
 ## Verify and demonstrate
 
 Run `python manage.py test` from `backend` and `npm.cmd run build -- --configLoader runner` from `frontend`.

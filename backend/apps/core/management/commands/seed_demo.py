@@ -19,6 +19,7 @@ from django.utils import timezone
 from apps.core.models import Tenant, User
 from apps.core.utils import generate_secret_key
 from apps.incidents.reporting import report_metrics
+from apps.incidents.evidence_store import save_bytes_with_key
 from apps.monitoring.models import Asset, LogSource, Event, Rule, Alert
 from apps.incidents.models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
 
@@ -378,11 +379,13 @@ class Command(BaseCommand):
         # Write the attachment before publishing its downloadable record.
         sample = b"OmniEdge fictional evidence: reviewed synthetic sign-in activity.\n"
         digest = hashlib.sha256(sample).hexdigest()
-        folder = Path(settings.EVIDENCE_ROOT).resolve() / "demo" / str(horizon.pk) / str(inc.pk)
-        folder.mkdir(parents=True, exist_ok=True)
-        path = folder / f"{digest}.txt"
-        if not path.exists():
-            path.write_bytes(sample)
+        path = save_bytes_with_key(f"demo-{horizon.pk}-{inc.pk}-{digest[:32]}", sample)
+        if path is None:
+            folder = Path(settings.EVIDENCE_ROOT).resolve() / "demo" / str(horizon.pk) / str(inc.pk)
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{digest}.txt"
+            if not path.exists():
+                path.write_bytes(sample)
         legacy = Evidence.objects.filter(
             incident=inc, tenant=horizon,
             original_filename="firewall_drop_log_20241124.pcap",

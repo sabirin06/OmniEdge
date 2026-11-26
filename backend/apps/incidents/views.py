@@ -19,6 +19,7 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsIncidentResponder, CanGenerateReport, CanManagePlaybooks
 from apps.core.utils import sha256_file
 from .models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
+from . import evidence_store
 from .reporting import report_analytics, report_metrics
 from .report_exports import record_csv, report_csv, report_pdf
 from .report_records import detailed_records
@@ -241,20 +242,14 @@ class IncidentEvidenceView(generics.ListAPIView):
         description = serializer.validated_data.get("description", "")
         sha256 = sha256_file(file)
         file.seek(0)
-        root = Path(settings.EVIDENCE_ROOT)
-        root.mkdir(parents=True, exist_ok=True)
-        stored_path = root / uuid4().hex
+        stored_path = evidence_store.save(file.chunks())
         try:
-            with stored_path.open("xb") as dest:
-                for chunk in file.chunks():
-                    dest.write(chunk)
-
             evidence = Evidence.objects.create(
                 incident=incident,
                 tenant=incident.tenant,
                 uploader=request.user,
                 original_filename=file.name,
-                stored_path=str(stored_path),
+                stored_path=stored_path,
                 file_type=file.content_type,
                 file_size=file.size,
                 sha256=sha256,
@@ -273,7 +268,7 @@ class IncidentEvidenceView(generics.ListAPIView):
 
             audit(request, incident, "incident.evidence_added", {"evidence_id": evidence.pk})
         except Exception:
-            stored_path.unlink(missing_ok=True)
+            evidence_store.remove(stored_path)
             raise
 
         return Response(EvidenceSerializer(evidence).data, status=status.HTTP_201_CREATED)
@@ -290,13 +285,12 @@ class EvidenceDownloadView(APIView):
         except (Incident.DoesNotExist, Evidence.DoesNotExist):
             return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
 
-        path = Path(evidence.stored_path).resolve()
-        roots = (Path(settings.EVIDENCE_ROOT).resolve(), (Path(settings.MEDIA_ROOT) / "evidence").resolve())
-        if not any(path.is_relative_to(root) for root in roots) or not path.is_file():
+        handle = evidence_store.open_for_download(evidence.stored_path)
+        if handle is None:
             return Response({"detail": "File not found on disk."}, status=status.HTTP_404_NOT_FOUND)
 
         response = FileResponse(
-            path.open("rb"),
+            handle,
             content_type="application/octet-stream",
             as_attachment=True,
             filename=evidence.original_filename,

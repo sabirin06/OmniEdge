@@ -119,6 +119,23 @@ class Evidence(models.Model):
         return f"{self.original_filename} ({self.incident.reference})"
 
 
+class EvidenceBlob(models.Model):
+    """Private evidence bytes for hosts without a persistent disk (EVIDENCE_STORAGE=database).
+
+    Evidence.stored_path holds "db:<key>" for these records; the bytes are only
+    served through the permission-checked evidence download endpoint.
+    """
+    key = models.CharField(max_length=64, unique=True)
+    data = models.BinaryField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "incidents_evidence_blob"
+
+    def __str__(self):
+        return self.key
+
+
 class Playbook(models.Model):
     tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE, related_name="playbooks")
     name = models.CharField(max_length=255)

@@ -1,0 +1,30 @@
+# Render Blueprint: one free Docker web service (Nginx + React + Gunicorn/Django).
+# PostgreSQL is hosted on Neon's free tier; paste its connection string as DATABASE_URL.
+services:
+  - type: web
+    name: omniedge
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health/
+    autoDeploy: true
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false            # Neon connection string (direct, not "-pooler"), entered in the dashboard
+      - key: DATABASE_SSLMODE
+        value: require
+      - key: HTTPS_ENABLED
+        value: "true"
+      - key: DEBUG
+        value: "false"
+      - key: EVIDENCE_STORAGE
+        value: database        # no persistent disk on Render Free: evidence lives in PostgreSQL
+      - key: GUNICORN_WORKERS
+        value: "2"
+      - key: ACCOUNT_TRUST_PROXY_IP
+        value: "true"
+      - key: SEED_DEMO
+        value: "false"         # set "true" for one deploy to load fictional demo data, then back to "false"

@@ -1,0 +1,74 @@
+# Rendered at container start by start.sh (envsubst fills ${PORT} and ${OMNIEDGE_PRIMARY_HOST}).
+# Render terminates HTTPS and sends X-Forwarded-Proto / X-Forwarded-For, which are
+# passed through to Django (its SECURE_PROXY_SSL_HEADER trusts only this proxy).
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log stderr warn;
+
+events { worker_connections 512; }
+
+http {
+    include /etc/nginx/mime.types;
+    default_type application/octet-stream;
+    access_log /dev/stdout;
+    sendfile on;
+    server_tokens off;
+    client_body_temp_path /tmp/nginx_client;
+    proxy_temp_path /tmp/nginx_proxy;
+    fastcgi_temp_path /tmp/nginx_fastcgi;
+    uwsgi_temp_path /tmp/nginx_uwsgi;
+    scgi_temp_path /tmp/nginx_scgi;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    upstream django { server 127.0.0.1:8000; }
+
+    server {
+        listen ${PORT};
+        server_name _;
+        root /srv/frontend;
+        client_max_body_size 6m;
+
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy "same-origin" always;
+
+        # Health check: always presented to Django with an allowed host name.
+        location = /api/v1/health/ {
+            proxy_pass http://django;
+            proxy_set_header Host ${OMNIEDGE_PRIMARY_HOST};
+            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+        }
+
+        location /api/ {
+            proxy_pass http://django;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+            proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+            proxy_read_timeout 90s;
+        }
+
+        location /admin/ {
+            proxy_pass http://django;
+            proxy_set_header Host $host;
+            proxy_set_header X-Forwarded-Proto $http_x_forwarded_proto;
+            proxy_set_header X-Forwarded-For $http_x_forwarded_for;
+        }
+
+        location /static/ {
+            alias /app/staticfiles/;
+            expires 7d;
+        }
+
+        # Evidence is private: only the permission-checked API serves it.
+        location ^~ /media/ { return 404; }
+
+        location /assets/ {
+            try_files $uri =404;
+            expires 30d;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+    }
+}

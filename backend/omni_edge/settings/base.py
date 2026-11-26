@@ -140,6 +140,8 @@ CSRF_TRUSTED_ORIGINS = []
 
 # Evidence upload settings
 EVIDENCE_ROOT = BASE_DIR / "private_evidence"
+# "filesystem" (files under EVIDENCE_ROOT) or "database" (bytes kept in PostgreSQL).
+EVIDENCE_STORAGE = "filesystem"
 EVIDENCE_MAX_SIZE_MB = 5
 EVIDENCE_ALLOWED_TYPES = [
     "image/png", "image/jpeg",
