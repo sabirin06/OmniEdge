@@ -68,7 +68,7 @@ AUTH_USER_MODEL = "core.User"
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -110,6 +110,18 @@ REST_FRAMEWORK = {
 
 # DRF Spectacular (OpenAPI)
 SPECTACULAR_SETTINGS = {
+    "ENUM_NAME_OVERRIDES": {
+        "TenantStatusEnum": "apps.core.models.Tenant.STATUS_CHOICES",
+        "RoleEnum": "apps.core.models.User.ROLE_CHOICES",
+        "IncidentStatusEnum": "apps.incidents.models.Incident.STATUS_CHOICES",
+        "ActionStatusEnum": "apps.incidents.models.Action.STATUS_CHOICES",
+        "IncidentTransitionStatusEnum": ["open", "investigating", "containment", "resolved", "closed"],
+        "ActionTransitionStatusEnum": ["pending", "in_progress", "completed", "skipped"],
+        "RiskSeverityEnum": "apps.monitoring.models.Rule.SEVERITY_CHOICES",
+        "EventSeverityEnum": "apps.monitoring.models.Event.SEVERITY_CHOICES",
+        "InputSeverityEnum": ["low", "medium", "high", "critical"],
+        "IngestSeverityEnum": ["info", "low", "medium", "high", "critical"],
+    },
     "TITLE": "OmniEdge API",
     "DESCRIPTION": "Security Operations & Incident Response Management",
     "VERSION": "1.0.0",
@@ -135,3 +147,7 @@ EVIDENCE_ALLOWED_TYPES = [
     "text/plain", "text/csv",
     "application/json",
 ]
+
+SESSION_COOKIE_AGE = 8 * 60 * 60
+SESSION_IDLE_SECONDS = 30 * 60
+EMAIL_TIMEOUT = 10

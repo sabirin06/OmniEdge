@@ -53,12 +53,6 @@ export function Simulator() {
 
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1000px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Synthetic Telemetry Simulator</h1>
-        <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-          Simulate real-time log ingestion to verify detection rule evaluation, alert generation, and tenant isolation
-        </p>
-      </div>
 
       <div className="card" style={{ padding: '24px', marginBottom: '24px' }}>
         <form onSubmit={handleSimulate}>

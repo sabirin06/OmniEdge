@@ -1,10 +1,10 @@
 # OmniEdge
 
-OmniEdge runs a fictional multi-tenant SOC workflow. Day 1 covers onboarding, assets, log sources, synthetic events, detection rules, and alerts.
+OmniEdge is a multi-tenant security operations prototype. It follows fictional telemetry from tenant onboarding and detection through alert triage, evidence, containment tasks, closure, and reporting.
 
 ## Run locally
 
-Create a PostgreSQL database and copy `backend/.env.example` to `backend/.env`. Set `DATABASE_URL` for your own PostgreSQL instance. Keep the local file out of Git.
+Install Python 3.12 or newer, Node.js 22.12 or newer, and PostgreSQL. Create a PostgreSQL database and copy `backend/.env.example` to `backend/.env`. Set `DATABASE_URL` for your own PostgreSQL instance. Keep the local file out of Git.
 
 In the first terminal, from the repository root:
 
@@ -30,13 +30,15 @@ npm.cmd run dev -- --configLoader runner
 - API documentation: http://127.0.0.1:8000/api/v1/docs/
 - Health: http://127.0.0.1:8000/api/v1/health/
 
-## Verify Day 1
+## Verify and demonstrate
 
 Run `python manage.py test` from `backend` and `npm.cmd run build -- --configLoader runner` from `frontend`.
 
 Sign in as Platform Admin, create an organization and create its Customer Admin under Users. Sign in as that admin, register an asset and connect a source. Create a tenant SOC Lead, sign in as that lead, and create an enabled rule for `login_failed` with conditions `{"metadata__failed_attempts":{"gte":5}}`. Return to the Customer Admin and run one failed-login simulation. Expect one saved event and one alert. Run a successful-login simulation and expect one saved event and no alert from that rule.
 
 The alert detail links to the saved event. Refresh each list to confirm persistence. See [Day 1 verification](docs/day-1-verification.md) and the [branding register](docs/branding.md).
+
+See the [API guide](docs/api.md) and [Linux deployment guide](docs/deployment.md). The README development setup uses two terminals. For an alternate Django port, set `OMNIEDGE_API_PROXY` before starting Vite.
 
 ## GitHub handoff
 
@@ -120,3 +122,5 @@ Use the ID of your own tenant. Rerunning the command preserves existing rules wi
 These are starting priorities for a workstation. A single failed logon is a review signal. Windows can record it at level 0, which is still preserved when OmniEdge assigns Medium risk. The collector reads System and Application only. Security 4625 is exercised using a clearly labeled synthetic fixture in the PostgreSQL test database. No Windows authentication attempts or system changes are needed. [Microsoft Event 4625](https://learn.microsoft.com/windows/security/threat-protection/auditing/event-4625) · [Microsoft storage event guidance](https://learn.microsoft.com/troubleshoot/windows-server/backup-and-storage/troubleshoot-data-corruption-and-disk-errors)
 
 Run the fixture tests from the backend directory with `python manage.py test apps.monitoring.tests.test_windows_risk`.
+
+Account enrollment and recovery require SMTP and the account mail worker. Follow the [account security setup](docs/account-security.md) for the environment variables and deployment commands.

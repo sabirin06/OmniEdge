@@ -214,7 +214,7 @@ export function IncidentDetail() {
         })}</ol> : <p className="incident-muted">No timeline entries yet.</p>}
         {canRespond && <form className="incident-note-form" onSubmit={event => submit(event, data =>
           incidentsApi.addNote(incidentId, String(data.get('note')).trim()), 'Note added')}>
-          <textarea aria-label="Investigation note" name="note" rows={1} placeholder="Add an investigation note?" required />
+          <textarea aria-label="Investigation note" name="note" rows={1} placeholder="Add an investigation note..." required />
           <button disabled={busy} className="btn btn-primary"><Send size={16} aria-hidden="true" /> Add Note</button>
         </form>}
       </section>}
@@ -256,19 +256,19 @@ export function IncidentDetail() {
               }}>
               <CloudUpload size={30} aria-hidden="true" />
               <span>{evidenceFile ? evidenceFile.name : <>Drag and drop a file here, or <strong>click to browse</strong></>}</span>
-              <small>{evidenceFile ? 'Click to choose a different file' : 'TXT, CSV, JSON, PNG, JPG, or PDF ? Up to 5 MB'}</small>
+              <small>{evidenceFile ? 'Click to choose a different file' : 'TXT, CSV, JSON, PNG, JPG, or PDF | Up to 5 MB'}</small>
             </button>
             {fileError && <p id="incident-file-error" className="form-error" role="alert">{fileError}</p>}
           </div>
           <div className="incident-evidence-description">
             <label htmlFor="incident-evidence-description">Description</label>
-            <textarea id="incident-evidence-description" name="description" rows={2} placeholder="Briefly describe the evidence (optional)?" />
+            <textarea id="incident-evidence-description" name="description" rows={2} placeholder="Briefly describe the evidence (optional)..." />
             <button disabled={busy || !evidenceFile} className="btn btn-primary"><CloudUpload size={16} aria-hidden="true" /> Upload Evidence</button>
           </div>
         </form>}
         {!open && !evidence.length && <p className="incident-muted">No evidence uploaded.</p>}
         {evidence.map(file => <article className="incident-evidence-file" key={file.id}>
-          <div><strong>{file.original_filename}</strong><p className="incident-muted">{file.description} ? {file.file_size} bytes ? {formatDateTime(file.uploaded_at)}</p></div>
+          <div><strong>{file.original_filename}</strong><p className="incident-muted">{file.description ? file.description + ' | ' : ''}{file.file_size} bytes | {formatDateTime(file.uploaded_at)}</p></div>
           <button className="btn btn-secondary" aria-label={`Download ${file.original_filename}`} onClick={() => download(file)}><Download size={16} aria-hidden="true" /> Download</button>
         </article>)}
       </section>}

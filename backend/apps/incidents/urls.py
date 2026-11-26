@@ -25,5 +25,9 @@ urlpatterns = [
 
     # Reports
     path("reports/", views.ReportListCreateView.as_view(), name="report-list"),
+    path("reports/analytics/", views.ReportAnalyticsView.as_view(), name="report-analytics"),
+    path("reports/export/", views.ReportExportView.as_view(), name="report-export"),
+    path("reports/records/", views.ReportRecordsView.as_view(), name="report-records"),
+    path("reports/records/export/", views.ReportRecordExportView.as_view(), name="report-record-export"),
     path("reports/<int:pk>/", views.ReportDetailView.as_view(), name="report-detail"),
 ]

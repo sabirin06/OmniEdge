@@ -102,12 +102,6 @@ export function Dashboard() {
 
   return <section className="workspace-page overview">
     <header className="workspace-heading overview-heading">
-      <div className="overview-heading-copy">
-        <Shield className="overview-shield" aria-hidden="true" />
-        <div>
-        <h2>{stats.scope === 'platform' ? 'Platform Overview' : 'SOC Overview'}</h2>
-        </div>
-      </div>
       <div className="incident-buttons overview-actions">
         {stats.scope === 'tenant' && <button className="btn btn-primary" disabled={simulating} onClick={simulate}>
           <Play size={16} aria-hidden="true" />

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Info, Pencil } from 'lucide-react';
 import { requestError, requestFields } from '../api/errors';
 import { rolesApi, builtInRoles } from '../api/roles';
 import { FormDialog } from '../components/ui/FormDialog';
@@ -17,6 +18,7 @@ export function Roles() {
 function RoleManagement() {
   const roles = useApi(rolesApi.list);
   const toast = useToast();
+  const [details, setDetails] = useState<{ name: string; baseRole: UserRole; builtIn: boolean }>();
   const [editing, setEditing] = useState<ManagedRole | null | undefined>();
   const [name, setName] = useState('');
   const [baseRole, setBaseRole] = useState<UserRole>('soc_analyst');
@@ -56,7 +58,6 @@ function RoleManagement() {
   return (
     <section>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <h1>Roles</h1>
         <button className="btn btn-primary" onClick={() => open(null)}>Create role</button>
       </div>
       {roles.loading && <p role="status">Loading roles...</p>}
@@ -65,17 +66,38 @@ function RoleManagement() {
         <table className="data-table">
           <thead><tr><th>Role</th><th>Permissions</th><th>Actions</th></tr></thead>
           <tbody>
-            {builtInRoles.map(([key, label]) => <tr key={key}><td>{label}</td><td>Built-in</td><td /></tr>)}
+            {builtInRoles.map(([key, label]) => <tr key={key}><td>{label}</td><td>Built-in</td><td>
+              <button type="button" className="btn btn-ghost btn-icon" title="View role details"
+                aria-label={`View details for ${label}`} onClick={() => setDetails({ name: label, baseRole: key, builtIn: true })}>
+                <Info size={17} aria-hidden="true" />
+              </button>
+            </td></tr>)}
             {roles.data?.map(role => (
               <tr key={role.id}>
                 <td>{role.name}</td><td>{roleLabels[role.base_role]}</td>
-                <td><button className="btn btn-ghost" onClick={() => open(role)}>Rename</button></td>
+                <td><div className="incident-buttons">
+                  <button type="button" className="btn btn-ghost btn-icon" title="View role details"
+                    aria-label={`View details for ${role.name}`}
+                    onClick={() => setDetails({ name: role.name, baseRole: role.base_role, builtIn: false })}>
+                    <Info size={17} aria-hidden="true" />
+                  </button>
+                  <button type="button" className="btn btn-ghost btn-icon" title="Edit role"
+                    aria-label={`Edit ${role.name}`} onClick={() => open(role)}>
+                    <Pencil size={17} aria-hidden="true" />
+                  </button>
+                </div></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <FormDialog open={editing !== undefined} title={editing ? 'Rename role' : 'Create role'}
+      {details && <FormDialog open title={details.name} onClose={() => setDetails(undefined)}>
+        <dl className="platform-health">
+          <div><dt>Role type</dt><dd>{details.builtIn ? 'Built-in' : 'Managed'}</dd></div>
+          <div><dt>Permission level</dt><dd>{roleLabels[details.baseRole]}</dd></div>
+        </dl>
+      </FormDialog>}
+      <FormDialog open={editing !== undefined} title={editing ? 'Edit role' : 'Create role'}
         onClose={() => { if (!saving) setEditing(undefined); }} onSubmit={save} submitLoading={saving}>
         <div className="form-group">
           <label htmlFor="role-name">Role name</label>

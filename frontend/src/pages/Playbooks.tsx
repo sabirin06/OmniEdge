@@ -27,7 +27,6 @@ export function Playbooks() {
   }
 
   return <section>
-    <h1>Response playbooks</h1>
     <div className="form-group"><label>Search playbooks <input value={search} onChange={event => { setSearch(event.target.value); setPage(1); }} /></label></div>
     {list.loading && <p role="status">Loading playbooks…</p>}
     {list.error && <p role="alert">Could not load playbooks. <button onClick={list.refresh}>Retry</button></p>}

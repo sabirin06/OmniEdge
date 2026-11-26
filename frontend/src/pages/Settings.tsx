@@ -1,6 +1,8 @@
+import { currentSupportWorkspace } from '../api/supportWorkspace';
+import { AccountSecurity } from '../components/ui/AccountSecurity';
 ﻿import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Check, LockKeyhole, Monitor, Moon, Palette, RefreshCw, Save, Settings as SettingsIcon, ShieldCheck, Sun, UserRound } from 'lucide-react';
+import { Check, LockKeyhole, Monitor, Moon, Palette, RefreshCw, Save, ShieldCheck, Sun, UserRound } from 'lucide-react';
 import { requestError, requestFields } from '../api/errors';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../contexts/AuthContext';
@@ -62,10 +64,6 @@ export function Settings() {
 
   return (
     <section className="workspace-page settings-page">
-      <header className="settings-heading">
-        <span className="settings-heading-icon"><SettingsIcon size={30} aria-hidden="true" /></span>
-        <div><h2>Settings</h2><p>Manage your profile and personalize your workspace.</p></div>
-      </header>
       <form className="settings-grid" onSubmit={save} noValidate aria-busy={saving}
         onChange={() => { setError(''); setErrors({}); }}>
         <section className="panel settings-card settings-profile">
@@ -138,6 +136,7 @@ export function Settings() {
           </section>
         </div>
       </form>
+      {!currentSupportWorkspace() && <AccountSecurity />}
     </section>
   );
 }

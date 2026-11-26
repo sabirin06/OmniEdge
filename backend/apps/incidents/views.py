@@ -19,13 +19,16 @@ from rest_framework.views import APIView
 from apps.core.permissions import IsIncidentResponder, CanGenerateReport, CanManagePlaybooks
 from apps.core.utils import sha256_file
 from .models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
-from .reporting import report_metrics
+from .reporting import report_analytics, report_metrics
+from .report_exports import record_csv, report_csv, report_pdf
+from .report_records import detailed_records
 from .serializers import (
     IncidentSerializer, IncidentCreateSerializer, IncidentTransitionSerializer,
     TimelineEntrySerializer, EvidenceSerializer, EvidenceUploadSerializer,
     PlaybookSerializer, PlaybookStepSerializer,
     ActionSerializer, ActionTransitionSerializer, PlaybookApplicationSerializer,
-    ReportSerializer, ReportCreateSerializer,
+    ReportSerializer, ReportCreateSerializer, ReportFiltersSerializer, ReportDownloadSerializer,
+    ReportRecordListSerializer, ReportRecordDownloadSerializer,
 )
 from apps.core.serializers import AuditLogSerializer
 
@@ -490,6 +493,82 @@ class ActionTransitionView(APIView):
 # Report views
 # ---------------------------------------------------------------------------
 
+def report_scope(user, data):
+    tenant = get_tenant(user)
+    if tenant is None or data.get("tenant", tenant.pk) != tenant.pk:
+        raise PermissionDenied("You can only access reports for your organization.")
+    return tenant
+
+
+def filtered_report(tenant, data):
+    return report_analytics(
+        tenant, data["period_start"], data["period_end"],
+        data.get("report_type", "overview"), data.get("severity", ""), data.get("status", ""),
+    )
+
+
+class ReportAnalyticsView(APIView):
+    permission_classes = [CanGenerateReport]
+
+    @extend_schema(parameters=[ReportFiltersSerializer], responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        serializer = ReportFiltersSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        return Response(filtered_report(report_scope(request.user, data), data))
+
+
+class ReportExportView(APIView):
+    permission_classes = [CanGenerateReport]
+
+    @extend_schema(parameters=[ReportDownloadSerializer], responses={
+        (200, "application/pdf"): OpenApiTypes.BINARY,
+        (200, "text/csv"): OpenApiTypes.BINARY,
+    })
+    def get(self, request):
+        serializer = ReportDownloadSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        report = filtered_report(report_scope(request.user, data), data)
+        return report_pdf(report) if data["export"] == "pdf" else report_csv(report)
+
+
+class ReportRecordsView(APIView):
+    permission_classes = [CanGenerateReport]
+
+    @extend_schema(parameters=[ReportRecordListSerializer], responses=OpenApiTypes.OBJECT)
+    def get(self, request):
+        serializer = ReportRecordListSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        filters = serializer.validated_data
+        records = detailed_records(report_scope(request.user, filters), filters)
+        page_size = 25
+        start = (filters["page"] - 1) * page_size
+        return Response({"count": records.count(), "results": list(records[start:start + page_size])})
+
+
+class ReportRecordExportView(APIView):
+    permission_classes = [CanGenerateReport]
+
+    @extend_schema(parameters=[ReportRecordDownloadSerializer], responses={
+        (200, "application/pdf"): OpenApiTypes.BINARY,
+        (200, "text/csv"): OpenApiTypes.BINARY,
+    })
+    def get(self, request):
+        serializer = ReportRecordDownloadSerializer(data=request.query_params)
+        serializer.is_valid(raise_exception=True)
+        filters = serializer.validated_data
+        tenant = report_scope(request.user, filters)
+        records = detailed_records(tenant, filters)
+        if filters["export"] == "csv":
+            return record_csv(records.iterator())
+        limit = 1000
+        rows = list(records[:limit + 1])
+        if len(rows) > limit:
+            raise ValidationError({"export": "PDF exports support up to 1,000 records. Narrow the filters or use CSV."})
+        return report_pdf({"tenant": {"name": tenant.name}, "filters": filters}, records=rows)
+
+
 class ReportListCreateView(generics.ListCreateAPIView):
     permission_classes = [CanGenerateReport]
     search_fields = ["title"]
@@ -509,14 +588,13 @@ class ReportListCreateView(generics.ListCreateAPIView):
         serializer = ReportCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
-        tenant = get_tenant(request.user)
-        if tenant is None:
-            raise ValidationError({"tenant": "Use an organization account."})
+        tenant = report_scope(request.user, data)
 
         period_start = data["period_start"]
         period_end = data["period_end"]
 
-        metrics = report_metrics(tenant, period_start, period_end)
+        metrics = ({"analytics": filtered_report(tenant, data)} if any(key in data for key in ("report_type", "severity", "status"))
+                   else report_metrics(tenant, period_start, period_end))
 
         report = Report.objects.create(
             tenant=tenant,

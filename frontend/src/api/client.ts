@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { currentSupportWorkspace } from './supportWorkspace';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -9,6 +10,11 @@ const api = axios.create({
 // Auto-attach CSRF token from cookie
 api.interceptors.request.use(async (config) => {
   const method = config.method?.toLowerCase() ?? '';
+  const workspace = currentSupportWorkspace();
+  if (workspace && config.url !== '/platform/support/') {
+    if (method !== 'get' && method !== 'head') throw new Error('Support workspaces are read-only.');
+    config.headers.set('X-OmniEdge-Support', String(workspace.id));
+  }
   if (['post', 'put', 'patch', 'delete'].includes(method) && !config.headers.has('X-CSRFToken')) {
     const cookie = document.cookie.split(';').find(c => c.trim().startsWith('csrftoken='));
     if (cookie) {

@@ -62,7 +62,7 @@ class LogSourceCreateSerializer(LogSourceSerializer):
     class Meta(LogSourceSerializer.Meta):
         fields = LogSourceSerializer.Meta.fields + ["plain_secret_key"]
 
-    def get_plain_secret_key(self, obj):
+    def get_plain_secret_key(self, obj) -> str | None:
         return getattr(obj, "_plain_secret_key", None)
 
 
@@ -79,7 +79,7 @@ class EventSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "tenant", "payload_hash", "received_at", "reviewed_risk", "risk_review_reason"]
 
-    def get_source_name(self, obj):
+    def get_source_name(self, obj) -> str | None:
         return obj.source.name if obj.source_id else None
 
 
@@ -146,12 +146,12 @@ class AlertSerializer(serializers.ModelSerializer):
             "rule_snapshot", "created_at", "updated_at",
         ]
 
-    def get_assignee_detail(self, obj):
+    def get_assignee_detail(self, obj) -> dict | None:
         if obj.assignee_id:
             return {"id": obj.assignee.id, "email": obj.assignee.email, "full_name": obj.assignee.full_name}
         return None
 
-    def get_event_detail(self, obj):
+    def get_event_detail(self, obj) -> dict:
         return {
             "id": obj.event_id,
             "event_type": obj.event.event_type,

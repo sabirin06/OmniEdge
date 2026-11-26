@@ -1,0 +1,21 @@
+[Unit]
+Description=OmniEdge account email worker
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=omniedge
+Group=omniedge
+WorkingDirectory=/opt/omniedge/backend
+EnvironmentFile=/etc/omniedge.env
+Environment=DJANGO_SETTINGS_MODULE=omni_edge.settings.production
+ExecStart=/opt/omniedge/.venv/bin/python manage.py send_account_mail --watch
+Restart=on-failure
+RestartSec=15
+PrivateTmp=true
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -3,7 +3,10 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { AppLayout, ProtectedRoute } from './components/layout/AppLayout';
 
 // Pages
+import { AccountRecovery } from './pages/AccountRecovery';
 import { Login } from './pages/Login';
+import { PlatformAdmin, PlatformSettingsPage } from './pages/PlatformAdmin';
+import { useAuth } from './hooks/useAuth';
 import { Dashboard } from './pages/Dashboard';
 import { Alerts } from './pages/Alerts';
 import { AlertDetail } from './pages/AlertDetail';
@@ -23,16 +26,24 @@ import { Audit } from './pages/Audit';
 import { Settings } from './pages/Settings';
 import { NotFound } from './pages/NotFound';
 
+function SettingsEntry() {
+  const { user } = useAuth();
+  return user?.role === 'platform_admin' ? <PlatformSettingsPage /> : <Settings />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<AccountRecovery key="password" flow="password" />} />
+      <Route path="/verify-email" element={<AccountRecovery key="verify" flow="verify" />} />
 
       {/* Authenticated Application Shell */}
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/platform/:section?" element={<PlatformAdmin />} />
           <Route path="/alerts" element={<Alerts />} />
           <Route path="/alerts/:id" element={<AlertDetail />} />
           <Route path="/incidents" element={<Incidents />} />
@@ -47,7 +58,7 @@ export default function App() {
           <Route path="/tenants" element={<Tenants />} />
           <Route path="/roles" element={<Roles />} />
           <Route path="/users" element={<Users />} />
-          <Route path="/settings" element={<Settings />} />
+          <Route path="/settings/:section?" element={<SettingsEntry />} />
           <Route path="/audit" element={<Audit />} />
           <Route path="*" element={<NotFound />} />
         </Route>

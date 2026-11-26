@@ -12,6 +12,8 @@ Management command to seed realistic demo data for OmniEdge:
 """
 import hashlib
 from datetime import timedelta
+from pathlib import Path
+from django.conf import settings
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from apps.core.models import Tenant, User
@@ -373,20 +375,33 @@ class Command(BaseCommand):
             },
         )
 
-        # Evidence
-        Evidence.objects.get_or_create(
-            incident=inc,
-            tenant=horizon,
+        # Write the attachment before publishing its downloadable record.
+        sample = b"OmniEdge fictional evidence: reviewed synthetic sign-in activity.\n"
+        digest = hashlib.sha256(sample).hexdigest()
+        folder = Path(settings.EVIDENCE_ROOT).resolve() / "demo" / str(horizon.pk) / str(inc.pk)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{digest}.txt"
+        if not path.exists():
+            path.write_bytes(sample)
+        legacy = Evidence.objects.filter(
+            incident=inc, tenant=horizon,
             original_filename="firewall_drop_log_20241124.pcap",
-            defaults={
-                "uploader": h_analyst1,
-                "stored_path": "evidence/horizon/inc1/firewall_drop_log_20241124.pcap",
-                "file_type": "application/vnd.tcpdump.pcap",
-                "file_size": 2048576,
-                "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-                "description": "Network packet capture showing SSH handshake failures from 198.51.100.45",
-            },
+            stored_path="evidence/horizon/inc1/firewall_drop_log_20241124.pcap",
         )
+        filename = "fictional-investigation-note.txt"
+        attachment = Evidence.objects.filter(incident=inc, tenant=horizon, original_filename=filename)
+        details = {
+            "uploader": h_analyst1,
+            "stored_path": str(path),
+            "file_type": "text/plain",
+            "file_size": len(sample),
+            "sha256": digest,
+            "description": "Fictional investigation notes for the demonstration.",
+        }
+        if not attachment.exists() and legacy.exists():
+            legacy.update(original_filename=filename, **details)
+        else:
+            Evidence.objects.get_or_create(incident=inc, tenant=horizon, original_filename=filename, defaults=details)
         self.stdout.write("  [+] Incidents, Timeline, Tasks, Evidence ready.")
 
         # 9. Report snapshot calculated from demo records

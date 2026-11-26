@@ -35,12 +35,6 @@ export function Audit() {
 
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
-      <div style={{ marginBottom: '20px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Security Audit Trail</h1>
-        <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-          Immutable system audit ledger of sensitive actions, triage changes, and incident status transitions
-        </p>
-      </div>
 
       {error && <p role="alert">Could not load audit entries. <button onClick={loadAudit}>Retry</button></p>}
       <div className="card" style={{ padding: '16px', marginBottom: '20px' }}>

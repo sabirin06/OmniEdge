@@ -1,3 +1,6 @@
+from unittest.mock import patch
+
+from django.db import OperationalError
 from django.test import TestCase
 from rest_framework.test import APIClient
 from apps.core.models import Tenant, User
@@ -53,3 +56,10 @@ class AuthAndTenantIsolationTests(TestCase):
         res = self.client.get("/api/v1/health/")
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["status"], "ok")
+
+
+    def test_health_check_reports_database_failure(self):
+        with patch("django.db.connection.cursor", side_effect=OperationalError("unavailable")):
+            response = self.client.get("/api/v1/health/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.data["database"], "error")

@@ -3,6 +3,7 @@
 const tenantStaff: UserRole[] = ['customer_admin', 'soc_analyst', 'soc_lead'];
 
 const pageRoles: Record<string, readonly UserRole[]> = {
+  platform: ['platform_admin'],
   alerts: tenantStaff,
   incidents: tenantStaff,
   events: tenantStaff,

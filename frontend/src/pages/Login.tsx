@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { requestError } from '../api/errors';
 import { isAxiosError } from 'axios';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
 import logo from '../assets/omniteckno-logo.png';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +12,8 @@ export function Login() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [mfa, setMfa] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -20,11 +22,12 @@ export function Login() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, mfa ? otp : undefined);
       navigate('/dashboard');
     } catch (err) {
       const status = isAxiosError(err) ? err.response?.status : undefined;
-      if (status === 401) setError('Check your email address and password, then try again.');
+      if (status === 428) { setMfa(true); setError('Enter an authenticator code or a recovery code.'); }
+      else if (status === 401) setError('Check your email address and password, then try again.');
       else if (status === 403) setError('The sign-in security check failed. Reload this page and try again.');
       else setError(requestError(err, 'Could not sign you in.'));
     } finally {
@@ -137,11 +140,19 @@ export function Login() {
             </div>
           </div>
 
+          {mfa && <div className="form-group"><label htmlFor="login-otp">Authenticator or recovery code</label>
+            <input id="login-otp" value={otp} onChange={event => setOtp(event.target.value)}
+              required maxLength={19} autoComplete="one-time-code" autoFocus />
+          </div>}
           <button type="submit" className="btn btn-primary" disabled={loading}
             style={{ width: '100%', justifyContent: 'center', padding: '11px' }}>
             {loading ? 'Authenticating...' : 'Sign In to Security Center'}
           </button>
         </form>
+        <div className="incident-buttons" style={{ marginTop: 16 }}>
+          <Link to="/forgot-password">Forgot password?</Link>
+          <Link to="/verify-email">Verify email</Link>
+        </div>
       </div>
     </div>
   );

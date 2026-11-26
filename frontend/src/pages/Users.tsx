@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { usersApi } from '../api/users';
+import { PlatformUsers } from './PlatformUsers';
 import { UserForm } from '../components/forms/UserForm';
 import { Pagination } from '../components/ui/Pagination';
 import { roleLabels } from '../utils/formatters';
@@ -14,7 +15,7 @@ export function Users() {
   if (user?.role !== 'platform_admin' && user?.role !== 'customer_admin') {
     return <p role="alert">Only administrators can manage users.</p>;
   }
-  return <UserManagement currentUserId={user.id} />;
+  return user.role === 'platform_admin' ? <PlatformUsers currentUserId={user.id} /> : <UserManagement currentUserId={user.id} />;
 }
 
 function UserManagement({ currentUserId }: { currentUserId: number }) {
@@ -26,7 +27,6 @@ function UserManagement({ currentUserId }: { currentUserId: number }) {
   return (
     <section>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <h1>Users</h1>
         <button className="btn btn-primary" onClick={() => setEditing(null)}>Create user</button>
       </div>
       <div className="form-group">
@@ -46,7 +46,7 @@ function UserManagement({ currentUserId }: { currentUserId: number }) {
                   <td>{user.full_name}</td><td>{user.email}</td>
                   <td>{user.managed_role_detail?.name ?? roleLabels[user.role]}</td>
                   <td>{user.tenant_detail?.name ?? 'Platform'}</td>
-                  <td>{user.is_active ? 'Active' : 'Disabled'}</td>
+                  <td>{user.suspended ? 'Suspended' : user.is_active ? 'Active' : 'Inactive'}</td>
                   <td>
                     {user.id !== currentUserId && (
                       <button className="btn btn-ghost" onClick={() => setEditing(user)}>Edit user</button>

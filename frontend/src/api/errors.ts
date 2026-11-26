@@ -41,6 +41,7 @@ export function requestFields<K extends string>(error: unknown, fields: readonly
 }
 
 export function requestError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message === 'Support workspaces are read-only.') return error.message;
   if (error instanceof SyntaxError) return 'Enter valid JSON for the match conditions.';
   if (!isAxiosError(error)) return fallback;
   if (!error.response) {

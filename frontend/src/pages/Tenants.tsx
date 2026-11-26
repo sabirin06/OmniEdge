@@ -1,3 +1,4 @@
+import { SupportAccess } from '../components/ui/SupportAccess';
 import { Pagination } from '../components/ui/Pagination';
 import { useApi } from '../hooks/useApi';
 import { requestError, requestFields } from '../api/errors';
@@ -78,12 +79,6 @@ export function Tenants() {
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Tenant Organizations</h1>
-          <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-            Multi-tenant boundary administration, customer isolation, and organization provisioning
-          </p>
-        </div>
 
         <button
           onClick={() => openTenant()}
@@ -102,7 +97,7 @@ export function Tenants() {
       <div className="form-group">
         <label htmlFor="monitoring-filter">Filter by status</label>
         <select id="monitoring-filter" value={listFilter} onChange={e => { setPage(1); setListFilter(e.target.value); }}>
-          <option value="">All</option><option value="active">Active</option><option value="suspended">Suspended</option>
+          <option value="">All</option><option value="active">Active</option><option value="suspended">Suspended</option><option value="inactive">Inactive</option>
         </select>
       </div>
       <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
@@ -144,13 +139,14 @@ export function Tenants() {
                       background: t.status === 'active' || t.is_active ? 'color-mix(in srgb, var(--color-success) 15%, transparent)' : 'color-mix(in srgb, var(--color-danger) 15%, transparent)',
                       color: t.status === 'active' || t.is_active ? 'var(--color-success)' : 'var(--color-danger)'
                     }}>
-                      {t.status === 'active' || t.is_active ? 'Active' : 'Suspended'}
+                      {t.status === 'active' || t.is_active ? 'Active' : t.status === 'inactive' ? 'Inactive' : 'Suspended'}
                     </span>
                   </td>
                   <td style={{ padding: '12px 16px', color: 'var(--color-text-secondary)' }}>
                     {formatDateTime(t.created_at)}
                   </td>
                   <td>
+                    <SupportAccess tenant={t.id} label={t.name} />
                     <button className="btn btn-ghost btn-sm" onClick={() => openTenant(t)}>Edit</button>
                     <button className="btn btn-ghost btn-sm" onClick={() => changeStatus(t)}>{t.status === 'active' ? 'Suspend' : 'Activate'}</button>
                   </td>

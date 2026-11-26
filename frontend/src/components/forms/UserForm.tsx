@@ -73,9 +73,15 @@ export function UserForm({ user, onClose, onSaved }: Props) {
         ...(password ? { password } : {}),
         is_active: active,
       };
-      if (user) await usersApi.update(user.id, payload);
-      else await usersApi.create(payload);
-      toast('success', user ? 'User updated' : 'User created');
+      if (user) {
+        const result = await usersApi.update(user.id, payload);
+        toast('success', result.data.email_verified ? 'User updated' : 'User updated. Email verification is pending.');
+      } else {
+        const result = await usersApi.create(payload);
+        toast(result.data.verification_email_available ? 'success' : 'warning', result.data.verification_email_available
+          ? 'User created. A verification email was queued.'
+          : 'User created. Email delivery is unavailable, so this account is pending verification.');
+      }
       onSaved();
       onClose();
     } catch (err: unknown) {
@@ -97,7 +103,7 @@ export function UserForm({ user, onClose, onSaved }: Props) {
       </div>
       <div className="form-group">
         <label htmlFor="user-email">Email</label>
-        <input id="user-email" aria-invalid={!!fields.email} aria-describedby={fields.email ? "user-email-error" : undefined} type="email" value={email} onChange={e => { setEmail(e.target.value); setFields(current => ({ ...current, email: undefined })); }} />
+        <input id="user-email" readOnly={!!user && user.email_verified !== false} aria-invalid={!!fields.email} aria-describedby={fields.email ? "user-email-error" : undefined} type="email" value={email} onChange={e => { setEmail(e.target.value); setFields(current => ({ ...current, email: undefined })); }} />
         {fields.email && <p className="form-error" role="alert" id="user-email-error">{fields.email}</p>}
       </div>
       <div className="form-group">
@@ -123,12 +129,13 @@ export function UserForm({ user, onClose, onSaved }: Props) {
           {tenantError && <p role="alert">{tenantError}</p>}
         </div>
       )}
-      <div className="form-group">
-        <label htmlFor="user-password">{user ? 'New password (optional)' : 'Temporary password'}</label>
-        <input id="user-password" aria-invalid={!!fields.password} aria-describedby={fields.password ? "user-password-error" : undefined} type="password" autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setFields(current => ({ ...current, password: undefined })); }} />
+      {!user && <div className="form-group">
+        <label htmlFor="user-password">Initial password</label>
+        <input id="user-password" aria-invalid={!!fields.password} aria-describedby={fields.password ? "user-password-error" : undefined} type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setFields(current => ({ ...current, password: undefined })); }} />
         {fields.password && <p className="form-error" role="alert" id="user-password-error">{fields.password}</p>}
-      </div>
-      {user && <label><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /> Active</label>}
+      </div>}
+      {user?.email_verified === false && <p className="muted">This account is awaiting email verification.</p>}
+      {user && user.email_verified !== false && <label><input type="checkbox" checked={active} onChange={e => setActive(e.target.checked)} /> Active</label>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </FormDialog>
   );

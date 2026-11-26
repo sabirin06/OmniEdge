@@ -5,6 +5,8 @@ import os
 from django.conf import settings
 from rest_framework import serializers
 from .models import Incident, TimelineEntry, Evidence, Playbook, PlaybookStep, Action, Report, AuditLog
+from .reporting import REPORT_TYPES, ALERT_STATUSES, INCIDENT_STATUSES
+from .report_records import RECORD_SORTS
 from apps.core.models import User
 from apps.core.serializers import AuditLogSerializer
 
@@ -29,17 +31,17 @@ class IncidentSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
 
-    def get_owner_detail(self, obj):
+    def get_owner_detail(self, obj) -> dict | None:
         if obj.owner_id:
             return {"id": obj.owner.id, "email": obj.owner.email, "full_name": obj.owner.full_name}
         return None
 
-    def get_creator_detail(self, obj):
+    def get_creator_detail(self, obj) -> dict | None:
         if obj.creator_id:
             return {"id": obj.creator.id, "email": obj.creator.email, "full_name": obj.creator.full_name}
         return None
 
-    def get_alert_count(self, obj):
+    def get_alert_count(self, obj) -> int:
         return obj.alerts.count()
 
 
@@ -93,7 +95,7 @@ class TimelineEntrySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "incident", "tenant", "actor", "created_at", "metadata", "entry_type"]
 
-    def get_actor_detail(self, obj):
+    def get_actor_detail(self, obj) -> dict | None:
         if obj.actor_id:
             return {"id": obj.actor.id, "email": obj.actor.email, "full_name": obj.actor.full_name}
         return None
@@ -115,7 +117,7 @@ class EvidenceSerializer(serializers.ModelSerializer):
             "file_size", "sha256", "uploaded_at",
         ]
 
-    def get_uploader_detail(self, obj):
+    def get_uploader_detail(self, obj) -> dict | None:
         if obj.uploader_id:
             return {"id": obj.uploader.id, "email": obj.uploader.email}
         return None
@@ -180,7 +182,7 @@ class PlaybookSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "tenant", "created_at", "updated_at"]
 
-    def get_step_count(self, obj):
+    def get_step_count(self, obj) -> int:
         return obj.steps.count()
 
 
@@ -203,7 +205,7 @@ class ActionSerializer(serializers.ModelSerializer):
     def validate_assignee(self, value):
         return tenant_member(value, self.context["request"])
 
-    def get_assignee_detail(self, obj):
+    def get_assignee_detail(self, obj) -> dict | None:
         if obj.assignee_id:
             return {"id": obj.assignee.id, "email": obj.assignee.email, "full_name": obj.assignee.full_name}
         return None
@@ -239,18 +241,49 @@ class ReportSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "tenant", "metrics", "generated_by", "created_at"]
 
-    def get_generated_by_detail(self, obj):
+    def get_generated_by_detail(self, obj) -> dict | None:
         if obj.generated_by_id:
             return {"id": obj.generated_by.id, "email": obj.generated_by.email}
         return None
 
 
-class ReportCreateSerializer(serializers.Serializer):
-    title = serializers.CharField(max_length=500)
+class ReportFiltersSerializer(serializers.Serializer):
     period_start = serializers.DateField()
     period_end = serializers.DateField()
+    report_type = serializers.ChoiceField(choices=REPORT_TYPES, required=False)
+    severity = serializers.ChoiceField(choices=("info", "low", "medium", "high", "critical"), required=False, allow_blank=True)
+    status = serializers.ChoiceField(choices=sorted(set(ALERT_STATUSES + INCIDENT_STATUSES)), required=False, allow_blank=True)
+    tenant = serializers.IntegerField(min_value=1, required=False)
 
     def validate(self, attrs):
-        if attrs["period_end"] < attrs["period_start"]:
-            raise serializers.ValidationError({"period_end": "End date must be after start date."})
+        start, end = attrs["period_start"], attrs["period_end"]
+        if end < start:
+            raise serializers.ValidationError({"period_end": "Choose an end date on or after the start date."})
+        if (end - start).days >= 366:
+            raise serializers.ValidationError({"period_end": "Choose a range of 366 days or fewer."})
+        statuses = {"alerts": ALERT_STATUSES, "incidents": INCIDENT_STATUSES, "events": ()}
+        report_type = attrs.get("report_type", "overview")
+        if attrs.get("status") and report_type in statuses and attrs["status"] not in statuses[report_type]:
+            raise serializers.ValidationError({"status": "Choose a status available for this report type."})
         return attrs
+
+
+class ReportCreateSerializer(ReportFiltersSerializer):
+    title = serializers.CharField(max_length=500)
+
+
+class ReportDownloadSerializer(ReportFiltersSerializer):
+    export = serializers.ChoiceField(choices=("csv", "pdf"))
+
+
+class ReportRecordFiltersSerializer(ReportFiltersSerializer):
+    search = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    ordering = serializers.ChoiceField(choices=RECORD_SORTS, required=False)
+
+
+class ReportRecordListSerializer(ReportRecordFiltersSerializer):
+    page = serializers.IntegerField(min_value=1, max_value=2147483647, required=False, default=1)
+
+
+class ReportRecordDownloadSerializer(ReportRecordFiltersSerializer):
+    export = serializers.ChoiceField(choices=("csv", "pdf"))

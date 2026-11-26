@@ -10,7 +10,7 @@ export interface Tenant {
   code: string;
   industry: string;
   contact_email: string;
-  status: "active" | "suspended";
+  status: "active" | "suspended" | "inactive";
   id: number;
   name: string;
   slug: string;
@@ -34,10 +34,13 @@ export interface User {
   role: UserRole;
   tenant: number | null;
   tenant_name?: string;
-  tenant_detail?: { id: number; name: string } | null;
+  tenant_detail?: { id: number; name: string; status?: Tenant["status"] } | null;
   managed_role?: number | null;
   managed_role_detail?: ManagedRole | null;
   is_active: boolean;
+  suspended?: boolean;
+  email_verified?: boolean;
+  verification_email_available?: boolean;
   date_joined: string;
   last_login: string | null;
 }
@@ -262,7 +265,7 @@ export interface Report {
   generated_by: number | null;
   generated_by_detail?: { id: number; email: string } | null;
   tenant: number;
-  metrics: Partial<ReportMetrics>;
+  metrics: Partial<ReportMetrics> & { analytics?: import("../api/reports").ReportAnalytics };
   created_at: string;
 }
 

@@ -87,12 +87,6 @@ export function Assets() {
   return (
     <div className="page-container" style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '24px', fontWeight: '700', margin: '0 0 4px 0' }}>Asset Inventory</h1>
-          <p style={{ margin: 0, color: 'var(--color-text-secondary)', fontSize: '13px' }}>
-            Monitored servers, databases, endpoints, and cloud infrastructure per tenant
-          </p>
-        </div>
 
         <button
           onClick={() => openAsset()}

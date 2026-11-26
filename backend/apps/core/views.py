@@ -4,8 +4,10 @@ Core views: auth, tenant management, user management, dashboard, audit logs.
 import logging
 from django.contrib.auth import login, logout
 from django.middleware.csrf import get_token
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.views.decorators.csrf import csrf_protect
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import extend_schema, inline_serializer
 from django.db.models import Count, Q
 from rest_framework import generics, serializers, status
@@ -47,13 +49,28 @@ class LoginView(APIView):
     @extend_schema(request=LoginSerializer, responses=UserSerializer)
     @method_decorator(csrf_protect)
     def post(self, request):
+        from .account_security import audit_auth, check_login_totp, rate_limit
+
+        address = request.data.get("email", "") if isinstance(request.data, dict) else ""
+        rate_limit(request, "login", str(address).strip()[:254], limit=10, ip_limit=90)
         serializer = LoginSerializer(data=request.data, context={"request": request})
         try:
             serializer.is_valid(raise_exception=True)
         except ValidationError:
+            audit_auth(request, "login_failed")
             return Response({"error": "Invalid email or password."}, status=status.HTTP_401_UNAUTHORIZED)
         user = serializer.validated_data["user"]
+        if user.mfa_secret:
+            code = serializer.validated_data.get("otp")
+            if not code or not check_login_totp(user, code):
+                if code:
+                    audit_auth(request, "mfa_rejected", user)
+                return Response({"code": "mfa_required", "message": "Enter a current authenticator code."}, status=428)
+        request.session.flush()
         login(request, user)
+        now = int(timezone.now().timestamp())
+        request.session.update({"account_signed_in_at": now, "account_last_seen": now})
+        audit_auth(request, "login_succeeded", user)
         user_data = UserSerializer(user).data
         user_data["tenant"] = user.tenant_id
         return Response({"user": user_data, **user_data})
@@ -64,6 +81,19 @@ class LogoutView(APIView):
 
     @extend_schema(request=None, responses=inline_serializer(name="LogoutResult", fields={"detail": serializers.CharField()}))
     def post(self, request):
+        from .platform_views import audit_platform
+        from .models import SupportSession
+
+        session_id = request.session.get("platform_support")
+        if session_id:
+            session = SupportSession.objects.filter(pk=session_id, actor=request.user, ended_at__isnull=True).first()
+            if session:
+                session.ended_at = timezone.now()
+                session.save(update_fields=["ended_at"])
+                audit_platform(request, "platform.support_ended", session, session.tenant, trigger="logout")
+        from .account_security import audit_auth
+
+        audit_auth(request, "logout", request.user)
         logout(request)
         return Response({"detail": "Logged out successfully."})
 
@@ -183,6 +213,40 @@ class UserListCreateView(generics.ListCreateAPIView):
         user = self.request.user
         users = User.objects.select_related("tenant", "managed_role")
         if user.is_platform_admin:
+            state = self.request.query_params.get("account_status")
+            if state == "active":
+                users = users.filter(is_active=True, suspended=False)
+            elif state == "inactive":
+                users = users.filter(is_active=False, suspended=False)
+            elif state == "disabled":
+                users = users.filter(suspended=True)
+            elif state and state != "all":
+                raise ValidationError({"account_status": "Choose a listed account status."})
+            role = self.request.query_params.get("role")
+            if role:
+                if role not in dict(User.ROLE_CHOICES):
+                    raise ValidationError({"role": "Choose a listed role."})
+                users = users.filter(role=role)
+            managed_role = self.request.query_params.get("managed_role")
+            if managed_role:
+                try:
+                    role_id = int(managed_role)
+                except ValueError:
+                    role_id = 0
+                if not 0 < role_id < 2**63:
+                    raise ValidationError({"managed_role": "Choose a listed role."})
+                users = users.filter(managed_role_id=role_id)
+            tenant = self.request.query_params.get("tenant")
+            if tenant == "platform":
+                users = users.filter(tenant__isnull=True)
+            elif tenant:
+                try:
+                    tenant_id = int(tenant)
+                except ValueError:
+                    tenant_id = 0
+                if not 0 < tenant_id < 2**63:
+                    raise ValidationError({"tenant": "Choose a listed tenant."})
+                users = users.filter(tenant_id=tenant_id)
             return users
         scoped = users.filter(tenant=user.tenant)
         return scoped.filter(is_active=True) if user.role in ("soc_analyst", "soc_lead") else scoped
@@ -215,12 +279,11 @@ class UserDetailView(generics.RetrieveUpdateAPIView):
 class DashboardView(APIView):
     permission_classes = [IsAuthenticated]
 
-    @extend_schema(request=None, responses=serializers.DictField())
+    @extend_schema(request=None, responses=OpenApiTypes.OBJECT)
     def get(self, request):
         from apps.monitoring.models import Alert, Event
         from apps.incidents.models import Incident, Action
         from apps.monitoring.serializers import AlertSerializer
-        from django.utils import timezone
         import datetime
 
         user = request.user
@@ -312,7 +375,8 @@ class HealthView(APIView):
     def get(self, request):
         from django.db import connection
         try:
-            connection.ensure_connection()
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
             db_ok = True
         except Exception:
             db_ok = False
@@ -320,7 +384,7 @@ class HealthView(APIView):
             "status": "ok" if db_ok else "degraded",
             "database": "connected" if db_ok else "error",
             "version": "1.0.0",
-        })
+        }, status=status.HTTP_200_OK if db_ok else status.HTTP_503_SERVICE_UNAVAILABLE)
 
 
 # ---------------------------------------------------------------------------
