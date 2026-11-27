@@ -3,6 +3,7 @@ import { requestError } from '../api/errors';
 import { isAxiosError } from 'axios';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, Mail, AlertCircle } from 'lucide-react';
+import { PasswordInput } from '../components/ui/PasswordInput';
 import logo from '../assets/omniteckno-logo.png';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -116,19 +117,17 @@ export function Login() {
             <label htmlFor="login-password" style={{ display: 'block', fontSize: '12px', fontWeight: '600', marginBottom: '6px', color: 'var(--color-text-secondary)' }}>
               Password
             </label>
-            <div style={{ position: 'relative' }}>
-              <Lock size={16} style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)' }} />
-              <input
+              <PasswordInput
+                leadingIcon={<Lock size={16} aria-hidden="true" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-secondary)', pointerEvents: 'none' }} />}
                 id="login-password"
                 autoComplete="current-password"
-                type="password"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 required
                 placeholder="••••••••"
                 style={{
                   width: '100%',
-                  padding: '10px 12px 10px 36px',
+                  padding: '10px 44px 10px 36px',
                   background: 'var(--color-canvas)',
                   border: '1px solid var(--color-border)',
                   borderRadius: '6px',
@@ -137,7 +136,6 @@ export function Login() {
                   boxSizing: 'border-box'
                 }}
               />
-            </div>
           </div>
 
           {mfa && <div className="form-group"><label htmlFor="login-otp">Authenticator or recovery code</label>

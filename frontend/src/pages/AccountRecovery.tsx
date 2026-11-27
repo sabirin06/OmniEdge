@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { isAxiosError } from 'axios';
 import { authApi } from '../api/auth';
 import { requestError } from '../api/errors';
+import { PasswordInput } from '../components/ui/PasswordInput';
 
 export function AccountRecovery({ flow }: { flow: 'password' | 'verify' }) {
   const verify = flow === 'verify';
@@ -44,7 +45,7 @@ export function AccountRecovery({ flow }: { flow: 'password' | 'verify' }) {
           <input id="recovery-code" required pattern="[0-9]{8}" maxLength={8} inputMode="numeric" autoComplete="one-time-code"
             value={code} onChange={e => setCode(e.target.value)} /></div>
         {!verify && <div className="form-group"><label htmlFor="recovery-password">New password</label>
-          <input id="recovery-password" type="password" autoComplete="new-password" required minLength={8} maxLength={128}
+          <PasswordInput id="recovery-password" autoComplete="new-password" required minLength={8} maxLength={128}
             value={password} onChange={e => setPassword(e.target.value)} /></div>}
         <button className="btn btn-primary platform-inline" value="confirm" disabled={busy}>{verify ? 'Verify email' : 'Reset password'}</button>
       </form>}

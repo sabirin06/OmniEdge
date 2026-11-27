@@ -1,6 +1,7 @@
 import { requestError, requestFields } from '../../api/errors';
 import { useEffect, useState } from 'react';
 import { FormDialog } from '../ui/FormDialog';
+import { PasswordInput } from '../ui/PasswordInput';
 import { useToast } from '../ui/Toast';
 import { usersApi } from '../../api/users';
 import { rolesApi, builtInRoles } from '../../api/roles';
@@ -131,7 +132,7 @@ export function UserForm({ user, onClose, onSaved }: Props) {
       )}
       {!user && <div className="form-group">
         <label htmlFor="user-password">Initial password</label>
-        <input id="user-password" aria-invalid={!!fields.password} aria-describedby={fields.password ? "user-password-error" : undefined} type="password" minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setFields(current => ({ ...current, password: undefined })); }} />
+        <PasswordInput id="user-password" aria-invalid={!!fields.password} aria-describedby={fields.password ? "user-password-error" : undefined} minLength={8} maxLength={128} autoComplete="new-password" value={password} onChange={e => { setPassword(e.target.value); setFields(current => ({ ...current, password: undefined })); }} />
         {fields.password && <p className="form-error" role="alert" id="user-password-error">{fields.password}</p>}
       </div>}
       {user?.email_verified === false && <p className="muted">This account is awaiting email verification.</p>}

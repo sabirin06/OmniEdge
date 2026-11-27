@@ -4,6 +4,7 @@ import { requestError } from '../../api/errors';
 import { useApi } from '../../hooks/useApi';
 import { ErrorState } from './ErrorState';
 import { FormDialog } from './FormDialog';
+import { PasswordInput } from './PasswordInput';
 
 export function AccountSecurity() {
   const security = useApi(authApi.security);
@@ -64,7 +65,7 @@ export function AccountSecurity() {
       {mode === 'logout' ? <p>This ends all sessions for your account, including this one.</p> : <>
         {key && <p>In your authenticator app, add a time-based account named OmniEdge using this setup key: <code>{key}</code>.</p>}
         <div className="form-group"><label htmlFor="security-password">Current password</label>
-          <input id="security-password" type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
+          <PasswordInput id="security-password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} />
         </div>
         {mode !== 'start' && <div className="form-group"><label htmlFor="security-code">{mode === 'enable' ? 'Authenticator code' : 'Authenticator or recovery code'}</label>
           <input id="security-code" maxLength={19} autoComplete="one-time-code" value={code} onChange={e => setCode(e.target.value)} /></div>}

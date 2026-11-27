@@ -18,6 +18,13 @@ python manage.py runserver
 
 Use `seed_demo` only in a fictional demo database. It creates the demo accounts and resets their demo passwords. To obtain a source key for an ingestion demonstration, register a source and save the key when it appears.
 
+For email verification and password reset, configure SMTP in `backend/.env` and keep the mail worker running in a separate terminal:
+
+```powershell
+cd backend
+python manage.py send_account_mail --watch
+```
+
 In the second terminal:
 
 ```powershell
