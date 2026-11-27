@@ -59,9 +59,26 @@ Useful commands: `docker compose logs --tail=100 api`, `docker compose restart`,
 
 Optional account-email worker (only after SMTP values are set in `.env`): `docker compose --profile mail up -d mail`.
 
+### Public demo URL with Cloudflare Quick Tunnel (free, no account)
+
+The free option used for the live demo: the Docker Compose stack keeps running on this PC and a [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) publishes `http://localhost:8080` at a random `https://<words>.trycloudflare.com` address with Cloudflare's HTTPS certificate. No ports are opened on the router or firewall: PostgreSQL (5432) and Gunicorn (8000) stay on the private Docker network and Nginx listens only on `127.0.0.1:8080`.
+
+Requirements: Docker Desktop running, the stack started (`docker compose up -d`) and [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/) installed.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\start-tunnel.ps1
+powershell -ExecutionPolicy Bypass -File .\stop-tunnel.ps1
+```
+
+[start-tunnel.ps1](start-tunnel.ps1) starts `cloudflared tunnel --url http://localhost:8080` in the background, reads the generated hostname, writes that exact hostname into `.env` (`ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`), sets `HTTPS_ENABLED=True` (HTTPS redirect, `Secure` cookies, HSTS) and recreates only the `api` container. It prints the public URL and checks `/api/v1/health/` through it. Runtime files (log, PID, URL) go to the git-ignored `.tunnel/` folder. [stop-tunnel.ps1](stop-tunnel.ps1) stops cloudflared and restores the local values. Database and evidence volumes are never touched. Cloudflare sends `X-Forwarded-Proto: https` and the visitor's IP in `X-Forwarded-For`; the container Nginx passes both to Django.
+
+**Quick Tunnel limitations:** the URL is temporary and changes every time the tunnel starts; it works only while this PC is on, awake, online and Docker Desktop is running. Quick Tunnels are intended for testing and demos, have no uptime guarantee and limit concurrent requests. While the tunnel runs, `http://localhost:8080` redirects to HTTPS, so use the public URL (or run `stop-tunnel.ps1` for local use). Only fictional seed data should be loaded; the `seed_demo` passwords are public, so stop the tunnel after the demo.
+
 ### Deploy to Back4app Containers (free, no card) with Neon PostgreSQL (free)
 
-The public demo runs as **one Docker container** built from the root [Dockerfile](Dockerfile): Nginx serves the React build on port 10000 and proxies `/api/` and `/admin/` to Gunicorn/Django inside the same container. Back4app builds it from GitHub and serves it on a `https://<app>.b4a.run` URL with HTTPS. PostgreSQL is a free Neon project. The container filesystem is not persistent, so evidence files are stored privately in PostgreSQL (`EVIDENCE_STORAGE=database`, table `incidents_evidence_blob`) and are only downloadable through the permission-checked evidence API. Local Docker Compose is unchanged and keeps evidence on its volume.
+> Tested result: the free Back4app plan keeps the app URL live for only **60 minutes per deploy** (a permanent URL is a paid add-on), and apps are served on `*.back4.app`. Use `ALLOWED_HOSTS=.back4.app,.b4a.run` and `CSRF_TRUSTED_ORIGINS=https://*.back4.app,https://*.b4a.run`. In our test the API still returned HTTP 400 for the forwarded host header, so this route was not completed; the Cloudflare Quick Tunnel above is the working free option.
+
+The image runs as **one Docker container** built from the root [Dockerfile](Dockerfile): Nginx serves the React build on port 10000 and proxies `/api/` and `/admin/` to Gunicorn/Django inside the same container. Back4app builds it from GitHub and serves it with HTTPS. PostgreSQL is a free Neon project. The container filesystem is not persistent, so evidence files are stored privately in PostgreSQL (`EVIDENCE_STORAGE=database`, table `incidents_evidence_blob`) and are only downloadable through the permission-checked evidence API. Local Docker Compose is unchanged and keeps evidence on its volume.
 
 1. **Neon** (neon.tech, free): create a project and copy the **direct** connection string (Connect → turn off connection pooling; the host must not contain `-pooler`).
 2. **Back4app** (back4app.com → Containers, free, no card): sign up with GitHub, choose **Deploy a container**, install the Back4app GitHub app for the repository, pick branch `main`, **Root** `./` (the root Dockerfile), auto-deploy on.
@@ -72,17 +89,17 @@ The public demo runs as **one Docker container** built from the root [Dockerfile
 | `SECRET_KEY` | long random value (`openssl rand -hex 32`) |
 | `DATABASE_URL` | Neon direct connection string |
 | `DATABASE_SSLMODE` | `require` |
-| `ALLOWED_HOSTS` | `.b4a.run` (leading dot = any b4a.run subdomain) |
-| `CSRF_TRUSTED_ORIGINS` | `https://*.b4a.run` |
+| `ALLOWED_HOSTS` | `.back4.app,.b4a.run` (leading dot = any subdomain) |
+| `CSRF_TRUSTED_ORIGINS` | `https://*.back4.app,https://*.b4a.run` |
 | `HTTPS_ENABLED` | `true` |
 | `EVIDENCE_STORAGE` | `database` |
 | `GUNICORN_WORKERS` | `1` (free plan has 256 MB RAM) |
 | `ACCOUNT_TRUST_PROXY_IP` | `true` |
 | `SEED_DEMO` | `true` for the first deploy only, then `false` |
 
-4. Create the app and wait for the build. Check `https://<app>.b4a.run/api/v1/health/` → `{"status":"ok","database":"connected"}`. After the first successful start, set `SEED_DEMO=false` (otherwise demo passwords are reset on every restart). Each start runs `migrate` (idempotent). Once you know the exact URL you can replace the wildcard values with it.
+4. Create the app and wait for the build. Check `https://<app>.back4.app/api/v1/health/` → `{"status":"ok","database":"connected"}`. After the first successful start, set `SEED_DEMO=false` (otherwise demo passwords are reset on every restart). Each start runs `migrate` (idempotent). Once you know the exact URL you can replace the wildcard values with it.
 
-**Back4app/Neon limitations:** the free container has 0.25 shared CPU and 256 MB RAM (the image uses about 70 MB with one worker), so it is slow under load; Back4app does not document uptime or sleep rules for the free plan. Neon Free suspends an idle database (short delay on the first query) and has limited storage (about 0.5 GB), which also holds evidence (5 MB per file). No SLA or managed backups: export with `pg_dump` against the Neon URL. Account email needs SMTP settings (`EMAIL_*`), not configured by default.
+**Back4app/Neon limitations:** the free container has 0.25 shared CPU and 256 MB RAM (the image uses about 70 MB with one worker), so it is slow under load, and the free URL expires 60 minutes after each deploy. Neon Free suspends an idle database (short delay on the first query) and has limited storage (about 0.5 GB), which also holds evidence (5 MB per file). No SLA or managed backups: export with `pg_dump` against the Neon URL. Account email needs SMTP settings (`EMAIL_*`), not configured by default.
 
 Test the single-container image locally (uses the Compose database):
 

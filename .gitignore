@@ -27,3 +27,6 @@ private_evidence/
 *.pem
 *.key
 .venv/
+
+# Cloudflare Quick Tunnel runtime state (logs, PID, URL)
+.tunnel/
