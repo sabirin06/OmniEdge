@@ -52,17 +52,31 @@ function Wait-ApiHealthy {
 Set-Location $root
 New-Item -ItemType Directory -Force $stateDir | Out-Null
 
-if ((Test-Path $pidFile) -and (Get-Process -Id ([int](Get-Content $pidFile)) -ErrorAction SilentlyContinue)) {
-    Write-Host "A tunnel is already running: $(Get-Content $urlFile -ErrorAction SilentlyContinue)"
-    Write-Host "Run .\stop-tunnel.ps1 first to start a new one."
-    exit 0
+function Test-LocalHealth {
+    try { return ((Invoke-RestMethod "http://localhost:$Port/api/v1/health/" -TimeoutSec 10).status -eq "ok") }
+    catch { return $false }
 }
 
 Write-Host "Checking the local stack..."
 docker compose up -d | Out-Null
 Wait-ApiHealthy
-$local = Invoke-RestMethod "http://localhost:$Port/api/v1/health/" -TimeoutSec 15
-if ($local.status -ne "ok") { throw "Local health check failed: $($local | ConvertTo-Json -Compress)" }
+if (-not (Test-LocalHealth)) {
+    # After a WSL/Docker Desktop restart the published port can stop forwarding
+    # even though the containers are healthy; re-publishing it fixes that.
+    Write-Host "localhost:$Port is not answering; recreating the nginx container (no data is stored there)..."
+    docker compose up -d --force-recreate --no-deps nginx | Out-Null
+    $ready = $false
+    for ($i = 0; $i -lt 15 -and -not $ready; $i++) { Start-Sleep -Seconds 2; $ready = Test-LocalHealth }
+    if (-not $ready) { throw "localhost:$Port still does not answer. Restart Docker Desktop, then run this script again." }
+}
+Write-Host "Local stack OK: http://localhost:$Port/api/v1/health/"
+
+if ((Test-Path $pidFile) -and (Get-Process -Id ([int](Get-Content $pidFile)) -ErrorAction SilentlyContinue)) {
+    $existing = Get-Content $urlFile -ErrorAction SilentlyContinue
+    Write-Host "The tunnel is already running: $existing" -ForegroundColor Green
+    Write-Host "Run .\stop-tunnel.ps1 first if you want a new URL."
+    exit 0
+}
 
 Write-Host "Starting Cloudflare Quick Tunnel for http://localhost:$Port ..."
 if (Test-Path $logFile) { Remove-Item $logFile -Force }

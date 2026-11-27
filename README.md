@@ -72,6 +72,8 @@ powershell -ExecutionPolicy Bypass -File .\stop-tunnel.ps1
 
 [start-tunnel.ps1](start-tunnel.ps1) starts `cloudflared tunnel --url http://localhost:8080` in the background, reads the generated hostname, writes that exact hostname into `.env` (`ALLOWED_HOSTS`, `CSRF_TRUSTED_ORIGINS`), sets `HTTPS_ENABLED=True` (HTTPS redirect, `Secure` cookies, HSTS) and recreates only the `api` container. It prints the public URL and checks `/api/v1/health/` through it. Runtime files (log, PID, URL) go to the git-ignored `.tunnel/` folder. [stop-tunnel.ps1](stop-tunnel.ps1) stops cloudflared and restores the local values. Database and evidence volumes are never touched. Cloudflare sends `X-Forwarded-Proto: https` and the visitor's IP in `X-Forwarded-For`; the container Nginx passes both to Django.
 
+**If the site shows an error after Windows/WSL updates or a Docker Desktop restart:** wait until Docker Desktop shows *Engine running*, then run `start-tunnel.ps1` again. It checks `localhost:8080` and re-publishes the Nginx port if Docker's port forwarding stopped working (the containers can be healthy while the port gives an empty reply).
+
 **Quick Tunnel limitations:** the URL is temporary and changes every time the tunnel starts; it works only while this PC is on, awake, online and Docker Desktop is running. Quick Tunnels are intended for testing and demos, have no uptime guarantee and limit concurrent requests. While the tunnel runs, `http://localhost:8080` redirects to HTTPS, so use the public URL (or run `stop-tunnel.ps1` for local use). Only fictional seed data should be loaded; the `seed_demo` passwords are public, so stop the tunnel after the demo.
 
 ### Deploy to Back4app Containers (free, no card) with Neon PostgreSQL (free)
